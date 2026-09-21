@@ -42,6 +42,32 @@ jobs:
       - name: Test
         run: python -m pytest --cov=hallcheck --cov-report=term-missing
 
+  web:
+    name: web (lint + types + tests + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      # No Supabase credentials here on purpose. The app is built to render a
+      # setup notice when they are absent, so the build is exercised without
+      # putting project keys into CI.
+      - run: npm run build
+
   migrations:
     name: migrations apply cleanly
     runs-on: ubuntu-latest
