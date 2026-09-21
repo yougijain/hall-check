@@ -143,18 +143,28 @@ detector and how much is which afternoons happened to get labelled.
 
 ## Forecast (M4)
 
-Predict the count 30 minutes ahead. Two baselines are recorded before the model
-is trained, and both stay in the table permanently:
+Predict the count 30 minutes ahead. Baselines are recorded before the model is
+trained, and all of them stay in the table permanently:
 
 1. **Same slot last week** — same weekday, same time of day, 7 days back.
 2. **Same slot yesterday** — same time of day, 1 day back.
+3. **Persistence** — the count right now.
 
 These are strong. Dining hall traffic is close to a weekly periodic signal, and
 a gradient boosting model that cannot beat "look at last Tuesday" is not earning
-its complexity.
+its complexity. Persistence is in the list because for a thirty-minute horizon
+it is the most obvious thing to beat, and leaving it out would make the other
+two look better than they are.
 
-Features: hour, minute-of-meal, weekday, minutes until close, the menu items for
-that meal, exam and holiday flags, optionally weather.
+Features: hour, minute-of-meal, weekday, minutes until close, holiday flags,
+and lagged counts at 0, 10, 20, 30 and 60 minutes back plus their differences.
+
+The lags were not in my original sketch for this milestone, and they turn out to
+be the most important features in it. Over thirty minutes the current count
+carries most of the signal, and a model predicting from "it is Tuesday at noon"
+while ignoring "there are 4 people in line right now" would lose to the clock.
+Menu items and weather are not wired in — they need data this project does not
+collect yet — and the feature builder takes them when it does.
 
 **The split is by time, never at random.** A random split puts 12:02 on a
 Tuesday in train and 12:04 the same Tuesday in test. Those two rows are almost
@@ -164,12 +174,34 @@ production, where every prediction is about a timestamp the model has never
 seen. Train on the earliest weeks, test on the most recent, evaluate baselines
 and model on that same held-out window.
 
-**Status: not yet measured.**
+Two further guards, both easy to get wrong:
 
-| Model | Test MAE |
+**The split carries an embargo.** Training keeps only samples whose *target*
+falls before the cut; the test set keeps only samples whose *origin* falls after
+it. Splitting on the origin alone leaves training rows whose thirty-minute-ahead
+target lands inside the test window — the model would have been shown
+test-period outcomes.
+
+**No sample spans a camera move or an ROI redraw.** A lag from before a move
+paired with a target from after it teaches the model a step change that is an
+artefact of the hardware. The baselines obey the same rule: letting them compare
+across an epoch while the model cannot would hand the model an unearned win.
+
+**Everything is scored on identical rows.** The seasonal baselines cannot answer
+the earliest history, so those rows are excluded from the comparison for
+everyone and the count of dropped rows is reported. Scoring the model on
+questions the baselines were never asked is the easiest way to fake a win.
+
+**Status: not yet measured on real data.** The harness is built and tested.
+`hallcheck forecast` generates the table below and exits non-zero when a
+baseline wins, so shipping the model has to be a deliberate act rather than a
+default.
+
+| Predictor | Test MAE |
 |---|---|
 | Baseline: same slot last week | — |
 | Baseline: same slot yesterday | — |
+| Baseline: persistence | — |
 | HistGradientBoostingRegressor | — |
 
 If the model loses, the table says so and the model does not ship. That result
