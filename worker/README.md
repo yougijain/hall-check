@@ -75,7 +75,10 @@ collapses whenever the network is bad. A gap in the data is honest. See
 | `store.py` | Supabase reads and writes, plus an in-memory double for tests |
 | `pipeline.py` | One tick: capture, count, store, isolate failures |
 | `scheduler.py` | The always-on interval loop |
-| `cli.py` | `hallcheck run` and `hallcheck once` |
+| `labeling.py` | Blind label collection: human count first, model count after |
+| `metrics.py` | MAE, bias, RMSE, bootstrap intervals |
+| `evaluate.py` | Stratified report, and the coverage rules that gate quoting it |
+| `cli.py` | `run`, `once`, `label`, `evaluate` |
 
 ## Configuration
 
@@ -110,7 +113,7 @@ reading for the same moment.
 ## Tests
 
 ```bash
-make test    # 89 tests, no network, no weights, no GPU
+make test    # 146 tests, no network, no weights, no GPU
 make lint
 ```
 
@@ -125,6 +128,23 @@ to bake the weights in, and that runs on every deploy.
 
 `tests/test_privacy.py` is the one to read first. It parses every module in the
 package and fails the build if a call that could persist pixels appears in it.
+
+## Collecting ground truth
+
+```bash
+python -m hallcheck.cli label worcester -n 10   # ten labels, one hall
+python -m hallcheck.cli evaluate                # the accuracy table
+```
+
+`label` captures a frame, runs the detector, **says nothing**, asks for your
+count, and only then shows both numbers. That ordering is the protocol, not a
+nicety: a labeller who has already seen `23` writes `23`, and the resulting MAE
+measures their suggestibility rather than the detector. It is enforced in code
+and pinned by a test.
+
+`evaluate` exits non-zero while any coverage gap remains, so it can gate the
+README table from a script. Full protocol in
+[`docs/measurement-protocol.md`](../docs/measurement-protocol.md).
 
 ## Deploying
 

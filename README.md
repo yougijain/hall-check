@@ -120,12 +120,26 @@ swamps the mean; at a true count of 0 it is undefined. MAE is in people, which
 is the unit the decision is made in — "the line is about 8 people longer than
 the model says" is actionable, "the model is 40% off" is not.
 
-**Status: not yet measured.** Numbers land here when the labels do. See
+**Why bias sits next to MAE.** They describe different failures. MAE 6 with
+bias 0 is a noisy detector; MAE 6 with bias −6 is a detector that
+systematically misses half the queue. The second is fixable and the first
+mostly is not, so collapsing them loses the actionable half. Bias is model
+minus human, so negative means under-counting.
+
+**Status: not yet measured.** The harness is built and tested; the labels are
+not collected yet. `hallcheck evaluate` generates the table below and exits
+non-zero while any coverage gap remains, so the figure cannot be quoted before
+the conditions are covered. Full protocol, including the counting rules and the
+known limitations, in
 [`docs/measurement-protocol.md`](docs/measurement-protocol.md).
 
-| Stratum | n | MAE | Bias |
-|---|---|---|---|
-| Overall | — | — | — |
+| Stratum | n | MAE (95% CI) | Bias | RMSE |
+|---|---|---|---|---|
+| **Overall** | — | — | — | — |
+
+The interval is a seeded percentile bootstrap. A point estimate from 180 labels
+invites being read as exact; the interval shows how much of the number is the
+detector and how much is which afternoons happened to get labelled.
 
 ## Forecast (M4)
 
