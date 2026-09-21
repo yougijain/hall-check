@@ -78,7 +78,9 @@ collapses whenever the network is bad. A gap in the data is honest. See
 | `labeling.py` | Blind label collection: human count first, model count after |
 | `metrics.py` | MAE, bias, RMSE, bootstrap intervals |
 | `evaluate.py` | Stratified report, and the coverage rules that gate quoting it |
-| `cli.py` | `run`, `once`, `label`, `evaluate` |
+| `features.py` | Supervised samples, with the leakage guards |
+| `forecast.py` | Time split, baselines, the booster, the comparison table |
+| `cli.py` | `run`, `once`, `label`, `evaluate`, `forecast` |
 
 ## Configuration
 
@@ -113,7 +115,7 @@ reading for the same moment.
 ## Tests
 
 ```bash
-make test    # 146 tests, no network, no weights, no GPU
+make test    # 194 tests, no network, no weights, no GPU
 make lint
 ```
 
@@ -145,6 +147,33 @@ and pinned by a test.
 `evaluate` exits non-zero while any coverage gap remains, so it can gate the
 README table from a script. Full protocol in
 [`docs/measurement-protocol.md`](../docs/measurement-protocol.md).
+
+## Forecasting
+
+```bash
+python -m hallcheck.cli forecast --days 60
+```
+
+Trains the 30-minute forecast and scores it against three baselines — same slot
+last week, same slot yesterday, and the count right now — on the same held-out
+rows. Exits non-zero when a baseline wins.
+
+The baselines are the point of the exercise. A gradient booster that cannot beat
+looking up last Tuesday is not earning its complexity, and the honest outcome of
+this milestone may well be a table that says so.
+
+Three guards in `features.py`:
+
+- Nothing in a sample's features comes from after its origin. The target is the
+  only value from the future.
+- No sample spans a camera epoch or ROI version change, because counts either
+  side of one are on different scales. The baselines obey the same rule.
+- Gaps are dropped, never imputed. A missing count means the camera was not
+  looked at, and inventing a value there trains the model on fiction.
+
+And one in `forecast.py`: an embargo. Training keeps samples whose target
+precedes the cut; the test set keeps samples whose origin follows it. Splitting
+on origin alone leaves training rows whose target lands inside the test window.
 
 ## Deploying
 
