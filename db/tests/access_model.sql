@@ -22,12 +22,19 @@ end;
 $$;
 
 -- Something for the read assertions to find.
+--
+-- The hall is taken from the table rather than named, so this file does not
+-- have to be edited every time the seeded roster changes. It was, once: 0005
+-- retired the single 'worcester' row in favour of two cameras, and these two
+-- inserts started failing the foreign key.
 insert into public.counts (hall_id, ts, count, model_version, conf_threshold, roi_version)
-values ('worcester', now(), 12, 'test', 0.35, 'v0-placeholder')
+select hall_id, now(), 12, 'test', 0.35, 'v0-placeholder'
+from public.halls where active order by hall_id limit 1
 on conflict (hall_id, ts) do nothing;
 
 insert into public.labels (hall_id, ts, human_count, model_count, meal, lighting)
-values ('worcester', now(), 14, 12, 'lunch', 'daylight')
+select hall_id, now(), 14, 12, 'lunch', 'daylight'
+from public.halls where active order by hall_id limit 1
 on conflict (hall_id, ts) do nothing;
 
 set role anon;
@@ -44,7 +51,7 @@ select count(*) as halls_public_readable  from public.halls_public;
 -- ---------------------------------------------------------------------------
 
 -- No writes anywhere. The service role key is the only writer.
-select pg_temp.assert_denied($$insert into public.counts (hall_id, ts, count, model_version, conf_threshold, roi_version) values ('worcester', now() + interval '1 hour', 999, 'x', 0.5, 'v')$$);
+select pg_temp.assert_denied($$insert into public.counts (hall_id, ts, count, model_version, conf_threshold, roi_version) values ('worcester_north', now() + interval '1 hour', 999, 'x', 0.5, 'v')$$);
 select pg_temp.assert_denied($$update public.counts set count = 0$$);
 select pg_temp.assert_denied($$delete from public.counts$$);
 select pg_temp.assert_denied($$insert into public.halls (hall_id, name, stream_url, roi_polygon) values ('fake', 'Fake', 'x', '[[0,0],[1,0],[1,1]]'::jsonb)$$);
@@ -52,7 +59,7 @@ select pg_temp.assert_denied($$update public.halls set camera_epoch = 99$$);
 
 -- Labels are private: free-text notes written by one person for themselves.
 select pg_temp.assert_denied($$select * from public.labels$$);
-select pg_temp.assert_denied($$insert into public.labels (hall_id, ts, human_count, meal, lighting) values ('worcester', now() + interval '2 hours', 1, 'lunch', 'dark')$$);
+select pg_temp.assert_denied($$insert into public.labels (hall_id, ts, human_count, meal, lighting) values ('worcester_north', now() + interval '2 hours', 1, 'lunch', 'dark')$$);
 
 -- Stream URLs and ROI polygons are withheld by column grant, not by a view
 -- that merely omits them. Selecting them directly has to fail.
