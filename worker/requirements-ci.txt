@@ -11,6 +11,8 @@
 
 numpy>=1.26
 opencv-python-headless>=4.10
+# The forecast tests train a real model; it is small and takes about a second.
+scikit-learn>=1.5
 pytest>=8.0
 pytest-cov>=5.0
 ruff>=0.6

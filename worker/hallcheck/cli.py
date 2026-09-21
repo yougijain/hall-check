@@ -5,10 +5,19 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import UTC
 
 from hallcheck.config import ConfigError, load_settings
 from hallcheck.detect import YoloPersonDetector
 from hallcheck.evaluate import build_report, render_markdown, to_observations
+from hallcheck.features import HORIZON_MINUTES, Reading, build_samples
+from hallcheck.forecast import (
+    DEFAULT_TEST_FRACTION,
+    NotEnoughData,
+    evaluate,
+    time_split,
+)
+from hallcheck.forecast import render_markdown as render_forecast
 from hallcheck.labeling import LIGHTING, MEALS, LabelAborted, run_label_session
 from hallcheck.pipeline import run_tick
 from hallcheck.store import SupabaseStore
@@ -51,6 +60,29 @@ def _build_parser() -> argparse.ArgumentParser:
         "--out",
         help="write the markdown table here instead of stdout",
     )
+
+    forecast = sub.add_parser(
+        "forecast", help="train the 30-minute forecast and compare it to the baselines"
+    )
+    forecast.add_argument(
+        "--days",
+        type=int,
+        default=60,
+        help="how much history to train and test on (default 60)",
+    )
+    forecast.add_argument(
+        "--horizon",
+        type=int,
+        default=HORIZON_MINUTES,
+        help=f"minutes ahead to predict (default {HORIZON_MINUTES})",
+    )
+    forecast.add_argument(
+        "--test-fraction",
+        type=float,
+        default=DEFAULT_TEST_FRACTION,
+        help="fraction of the timeline held out, most recent first",
+    )
+    forecast.add_argument("-o", "--out", help="write the markdown table here instead of stdout")
     return parser
 
 
@@ -82,6 +114,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "evaluate":
         return _evaluate(args, store)
+
+    if args.command == "forecast":
+        return _forecast(args, store)
 
     if args.command == "once":
         results = run_tick(detector, store, settings)
@@ -131,6 +166,48 @@ def _label(args, detector, store, settings) -> int:
 
     print(f"\nStored {collected} label(s).")
     return 0
+
+
+def _forecast(args, store) -> int:
+    from datetime import datetime, timedelta
+
+    since = datetime.now(tz=UTC) - timedelta(days=args.days)
+    halls = store.active_halls()
+    hours = {hall.hall_id: (hall.opens_at, hall.closes_at) for hall in halls}
+
+    readings = [
+        Reading(
+            hall_id=row["hall_id"],
+            ts=datetime.fromisoformat(row["ts"]),
+            count=int(row["count"]),
+            camera_epoch=int(row.get("camera_epoch") or 1),
+            roi_version=str(row.get("roi_version") or "v1"),
+        )
+        for row in store.counts_since(since)
+    ]
+
+    samples = build_samples(readings, horizon_minutes=args.horizon, hours=hours)
+    log.info("built %d samples from %d readings", len(samples), len(readings))
+
+    try:
+        report = evaluate(
+            time_split(samples, test_fraction=args.test_fraction),
+        )
+    except NotEnoughData as exc:
+        log.error("%s", exc)
+        return 1
+
+    markdown = render_forecast(report)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as handle:
+            handle.write(markdown + "\n")
+        print(f"wrote {args.out}")
+    else:
+        print(markdown)
+
+    # Non-zero when a baseline wins, so shipping the model has to be a
+    # deliberate act rather than the default.
+    return 0 if report.model_wins else 1
 
 
 def _evaluate(args, store) -> int:
