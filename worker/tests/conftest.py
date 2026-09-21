@@ -73,8 +73,14 @@ def fake_frame() -> np.ndarray:
 
 @pytest.fixture
 def stub_capture(monkeypatch, fake_frame):
-    """Replace the pipeline's frame source. Returns the list of URLs asked for."""
-    from hallcheck import pipeline
+    """Replace the frame source. Returns the list of URLs asked for.
+
+    Both `pipeline` and `labeling` do `from hallcheck.capture import
+    capture_frame`, which binds the function into each module at import time.
+    Patching only one of them leaves the other talking to a real ffmpeg, so
+    every consumer's binding is replaced here.
+    """
+    from hallcheck import labeling, pipeline
 
     requested: list[str] = []
 
@@ -86,7 +92,8 @@ def stub_capture(monkeypatch, fake_frame):
                 raise error
             yield fake_frame
 
-        monkeypatch.setattr(pipeline, "capture_frame", _capture)
+        for module in (pipeline, labeling):
+            monkeypatch.setattr(module, "capture_frame", _capture)
         return requested
 
     return _install

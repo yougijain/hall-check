@@ -71,6 +71,42 @@ class CountRecord:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class LabelRecord:
+    hall_id: str
+    ts: datetime
+    human_count: int
+    model_count: int | None
+    meal: str
+    lighting: str
+    model_version: str | None = None
+    conf_threshold: float | None = None
+    roi_version: str | None = None
+    camera_epoch: int | None = None
+    notes: str | None = None
+
+    @property
+    def error(self) -> int | None:
+        if self.model_count is None:
+            return None
+        return self.model_count - self.human_count
+
+    def to_row(self) -> dict[str, Any]:
+        return {
+            "hall_id": self.hall_id,
+            "ts": self.ts.isoformat(),
+            "human_count": self.human_count,
+            "model_count": self.model_count,
+            "meal": self.meal,
+            "lighting": self.lighting,
+            "model_version": self.model_version,
+            "conf_threshold": self.conf_threshold,
+            "roi_version": self.roi_version,
+            "camera_epoch": self.camera_epoch,
+            "notes": self.notes,
+        }
+
+
 def _parse_time(value: Any) -> time | None:
     if value in (None, ""):
         return None
