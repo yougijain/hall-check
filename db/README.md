@@ -20,6 +20,7 @@ psql "$SUPABASE_DB_URL" -f db/migrations/0001_init.sql
 | `0001_init.sql` | `halls`, `counts`, `labels`, indexes, `updated_at` trigger |
 | `0002_rls_and_read_views.sql` | Row level security, `halls_public` and `hall_latest` views |
 | `0003_seed_halls.sql` | The four dining commons, with placeholder ROIs |
+| `0004_harden_function_search_path.sql` | Pins `search_path` on the `updated_at` trigger function |
 
 ## Access model
 
