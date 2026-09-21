@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/*
+ * A small, deliberate palette. The page shows one number per hall and a curve;
+ * anything more decorative competes with the thing the reader came for.
+ *
+ * Occupancy colour is NOT a red/amber/green traffic light. A "green" hall
+ * implies a verified claim about wait time that this project cannot make - the
+ * count is a proxy for a queue, measured with known error, and dressing it as
+ * a verdict hides that. The scale runs cool to warm as a magnitude cue only.
+ */
+
+@theme {
+  --color-ink: oklch(0.21 0.02 260);
+  --color-ink-soft: oklch(0.48 0.02 260);
+  --color-surface: oklch(0.99 0.003 260);
+  --color-surface-raised: oklch(1 0 0);
+  --color-edge: oklch(0.91 0.006 260);
+
+  --color-quiet: oklch(0.72 0.11 210);
+  --color-moderate: oklch(0.78 0.13 90);
+  --color-busy: oklch(0.68 0.16 40);
+  --color-unknown: oklch(0.75 0.01 260);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  --page: var(--color-surface);
+  --card: var(--color-surface-raised);
+  --text: var(--color-ink);
+  --text-soft: var(--color-ink-soft);
+  --border: var(--color-edge);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: oklch(0.17 0.012 260);
+    --card: oklch(0.22 0.014 260);
+    --text: oklch(0.96 0.004 260);
+    --text-soft: oklch(0.72 0.012 260);
+    --border: oklch(0.31 0.014 260);
+  }
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--page);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures stop the count from shifting width as it changes. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
