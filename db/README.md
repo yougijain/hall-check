@@ -22,6 +22,7 @@ psql "$SUPABASE_DB_URL" -f db/migrations/0001_init.sql
 | `0003_seed_halls.sql` | The four dining commons, with placeholder ROIs |
 | `0004_harden_function_search_path.sql` | Pins `search_path` on the `updated_at` trigger function |
 | `0005_reconcile_halls_with_live_streams.sql` | Splits Worcester into its two cameras; deactivates Franklin, which has none |
+| `0006_hampshire_cameras_and_blue_wall.sql` | Splits Hampshire into its two cameras; records Blue Wall, inactive |
 
 ## Access model
 

@@ -143,17 +143,26 @@ The cameras UMass actually publishes are at
 [umassdining.com/livestream](https://www.umassdining.com/livestream), and the
 roster does not match the obvious guess:
 
-| hall_id | Camera |
-|---|---|
-| `worcester_north` | Worcester Commons, north |
-| `worcester_south` | Worcester Commons, south |
-| `hampshire` | Hampshire Commons |
-| `berkshire` | Berkshire Commons |
-| `franklin` | **None.** Seeded `active = false` |
+| hall_id | Camera | Active |
+|---|---|---|
+| `worcester_north` | Worcester Commons, north | yes |
+| `worcester_south` | Worcester Commons, south | yes |
+| `hampshire_north` | Hampshire Commons, north | yes |
+| `hampshire_south` | Hampshire Commons, south | yes |
+| `berkshire` | Berkshire Commons | yes |
+| `blue_wall` | Blue Wall entrance | **no** — retail, recorded not enabled |
+| `franklin` | **None published** | **no** |
 
-Worcester has two cameras and Franklin has none, which is why `0005` exists.
-Blue Wall, Harvest and Roots also stream but are retail rather than dining
-commons, and are deliberately not seeded.
+Both Worcester and Hampshire have two cameras, Franklin has none, and Blue Wall
+is retail rather than a dining common — which is what `0005` and `0006` are
+for. Blue Wall's row exists and its stream can be set, but it stays
+`active = false` until someone deliberately enables it:
+
+```sql
+update public.halls set active = true where hall_id = 'blue_wall';
+```
+
+Harvest and Roots also stream and are not seeded at all.
 
 If a camera streams through a watch page rather than a direct `.m3u8`, the
 worker resolves it with yt-dlp automatically, so the watch URL is a fine value
