@@ -21,6 +21,14 @@ class StoreError(RuntimeError):
 
 
 class Store(Protocol):
+    """What the rest of the worker needs from persistence.
+
+    Kept in step with both implementations by `tests/test_store.py`, which
+    asserts that every method named here exists on each of them. A protocol
+    that has drifted from its implementations documents nothing and type-checks
+    nothing.
+    """
+
     def active_halls(self) -> list[Hall]: ...
 
     def record_count(self, record: CountRecord) -> None: ...
@@ -28,6 +36,12 @@ class Store(Protocol):
     def counts_between(
         self, hall_id: str, start: datetime, end: datetime
     ) -> list[dict[str, Any]]: ...
+
+    def counts_since(self, start: datetime) -> list[dict[str, Any]]: ...
+
+    def record_label(self, record: LabelRecord) -> None: ...
+
+    def all_labels(self) -> list[dict[str, Any]]: ...
 
 
 class SupabaseStore:
@@ -81,6 +95,37 @@ class SupabaseStore:
             raise StoreError(f"could not read counts for {hall_id}: {exc}") from exc
         return list(response.data or [])
 
+    def counts_since(self, start: datetime) -> list[dict[str, Any]]:
+        """Every hall's counts from `start` onward, for training.
+
+        Paged rather than fetched in one request: PostgREST caps a response at
+        1000 rows by default, and a silently truncated training set would look
+        like a short history rather than an error.
+        """
+        page_size = 1000
+        offset = 0
+        rows: list[dict[str, Any]] = []
+
+        while True:
+            try:
+                response = (
+                    self._client.table("counts")
+                    .select("*")
+                    .gte("ts", start.isoformat())
+                    .order("hall_id")
+                    .order("ts")
+                    .range(offset, offset + page_size - 1)
+                    .execute()
+                )
+            except Exception as exc:
+                raise StoreError(f"could not read counts since {start}: {exc}") from exc
+
+            page = list(response.data or [])
+            rows.extend(page)
+            if len(page) < page_size:
+                return rows
+            offset += page_size
+
     def record_label(self, record: LabelRecord) -> None:
         try:
             # Same slot, same label: re-labelling an instant corrects it
@@ -123,6 +168,13 @@ class InMemoryStore:
             record.to_row()
             for record in sorted(self.records, key=lambda r: r.ts)
             if record.hall_id == hall_id and start <= record.ts < end
+        ]
+
+    def counts_since(self, start: datetime) -> list[dict[str, Any]]:
+        return [
+            record.to_row()
+            for record in sorted(self.records, key=lambda r: (r.hall_id, r.ts))
+            if record.ts >= start
         ]
 
     def record_label(self, record: LabelRecord) -> None:

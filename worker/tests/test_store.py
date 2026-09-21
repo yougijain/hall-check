@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from hallcheck.models import CountRecord
-from hallcheck.store import InMemoryStore
+from hallcheck.store import InMemoryStore, Store, SupabaseStore
 
 START = datetime(2026, 3, 4, 12, 0, tzinfo=UTC)
 
@@ -60,3 +62,37 @@ class TestInMemoryStore:
 
         rows = store.counts_between("worcester", START, START + timedelta(hours=1))
         assert [r["count"] for r in rows] == [1]
+
+
+class TestProtocolConformance:
+    """Both implementations must satisfy everything `Store` declares.
+
+    A Protocol is only documentation unless something checks it. This caught a
+    silent gap where two methods had been added to both implementations but
+    never to the Protocol, so nothing depending on the interface knew about
+    them.
+    """
+
+    @pytest.mark.parametrize("implementation", [SupabaseStore, InMemoryStore])
+    def test_implements_every_protocol_method(self, implementation):
+        required = {
+            name
+            for name in dir(Store)
+            if not name.startswith("_") and callable(getattr(Store, name, None))
+        }
+        missing = {name for name in required if not hasattr(implementation, name)}
+        assert not missing, f"{implementation.__name__} is missing {sorted(missing)}"
+
+    def test_the_protocol_covers_what_callers_use(self):
+        # Named explicitly so adding a store method without declaring it on the
+        # Protocol fails here rather than at a call site months later.
+        expected = {
+            "active_halls",
+            "record_count",
+            "counts_between",
+            "counts_since",
+            "record_label",
+            "all_labels",
+        }
+        declared = {name for name in dir(Store) if not name.startswith("_")}
+        assert expected <= declared, f"Protocol is missing {sorted(expected - declared)}"
