@@ -27,17 +27,67 @@ from __future__ import annotations
 import logging
 import signal
 import sys
+from datetime import UTC
 from types import FrameType
 
 from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from hallcheck.config import Settings
 from hallcheck.detect import Detector
+from hallcheck.drift import DriftStatus, check_all, render_report
+from hallcheck.features import Reading
 from hallcheck.pipeline import run_tick
 from hallcheck.store import Store
 
 log = logging.getLogger(__name__)
+
+
+def run_drift_check(store: Store) -> None:
+    """Compare every camera's last day against its trailing fortnight.
+
+    Logged rather than raised. A drifting camera is not an emergency that
+    should take the capture loop down - the counts keep arriving, they have
+    just stopped meaning what they did - but it does need a human to look at
+    the stream and decide whether to bump `camera_epoch`.
+    """
+    from datetime import datetime, timedelta
+
+    from hallcheck.drift import BASELINE_WINDOW_DAYS, RECENT_WINDOW_HOURS
+
+    now = datetime.now(tz=UTC)
+    lookback = timedelta(days=BASELINE_WINDOW_DAYS, hours=RECENT_WINDOW_HOURS)
+
+    try:
+        rows = store.counts_since(now - lookback)
+    except Exception as exc:  # the capture loop must survive this
+        log.error("drift check could not read counts: %s", exc)
+        return
+
+    readings = [
+        Reading(
+            hall_id=row["hall_id"],
+            ts=datetime.fromisoformat(row["ts"]),
+            count=int(row["count"]),
+            camera_epoch=int(row.get("camera_epoch") or 1),
+            roi_version=str(row.get("roi_version") or "v1"),
+        )
+        for row in rows
+    ]
+
+    signals = check_all(readings, now=now)
+    # Not `signal`: this module imports the stdlib `signal` for the SIGTERM
+    # handler in serve(), and shadowing it here is a trap waiting for whoever
+    # next adds a line to this function.
+    for result in signals:
+        if result.status is DriftStatus.ALERT:
+            log.error("DRIFT %s", result.describe())
+        else:
+            log.info("drift check: %s", result.describe())
+
+    if any(s.status is DriftStatus.ALERT for s in signals):
+        log.error("drift report:\n%s", render_report(signals))
 
 
 def build_scheduler(detector: Detector, store: Store, settings: Settings) -> BlockingScheduler:
@@ -51,6 +101,21 @@ def build_scheduler(detector: Detector, store: Store, settings: Settings) -> Blo
         max_instances=1,
         coalesce=True,
         misfire_grace_time=settings.interval_seconds,
+        replace_existing=True,
+    )
+
+    # Once a day, in the small hours: the check needs a full day of readings
+    # to compare, and running it more often would re-report the same drift
+    # every hour until someone acts on it.
+    scheduler.add_job(
+        run_drift_check,
+        trigger=CronTrigger(hour=8, minute=0),
+        args=[store],
+        id="drift",
+        name="check every camera for drift",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
         replace_existing=True,
     )
     return scheduler

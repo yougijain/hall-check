@@ -13,6 +13,9 @@ numpy>=1.26
 opencv-python-headless>=4.10
 # The forecast tests train a real model; it is small and takes about a second.
 scikit-learn>=1.5
+# Pure Python and tiny. Included so the scheduler wiring - the drift job's
+# trigger, and its refusal to take the capture loop down - is actually tested.
+apscheduler>=3.10.4
 pytest>=8.0
 pytest-cov>=5.0
 ruff>=0.6

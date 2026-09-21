@@ -211,15 +211,27 @@ is not a failure of the project; it is the project working.
 
 Cameras move. Someone bumps a mount, maintenance re-aims a lens, a screen gets
 repositioned, and from that moment the ROI covers a different piece of the
-world. The counts stay plausible, which is what makes it dangerous.
+world. The counts stay plausible, which is what makes it dangerous — still
+small integers, still rising at lunch, nothing announcing that they changed
+meaning.
 
-Per camera, Hall Check compares a rolling 24-hour median against the trailing
-14-day median for the same time slot. A sustained divergence past the threshold
-in [`docs/runbook.md`](docs/runbook.md) raises an alert, which is the signal to
-inspect the stream and increment `camera_epoch`.
+Per camera, once a day, Hall Check buckets readings into 30-minute slots and
+compares the median of the last 24 hours against the median of the preceding 14
+days, slot against matching slot. A shift of **at least 40% and at least 4
+people**, sustained across at least 6 busy slots, raises an alert.
 
-The same-slot comparison matters: comparing a 24-hour median to a 14-day median
-without matching the time of day just measures the meal schedule.
+Both thresholds have to be breached together. Relative alone fires every time a
+quiet hall goes from 2 people to 1; absolute alone fires on the busiest hall
+every light week. The same-slot matching matters too: comparing a 24-hour
+median against a 14-day median without matching the time of day just measures
+the meal schedule.
+
+An outage reports `insufficient_data`, not drift. They need completely
+different responses, and conflating them sends somebody to check a lens when
+the container is down.
+
+The full reasoning for every threshold, what the check deliberately will not
+catch, and the incident log are in [`docs/runbook.md`](docs/runbook.md).
 
 ## What this does not prove
 
