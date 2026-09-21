@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Model weights - never committed, pulled at runtime
+*.pt
+*.onnx
+*.engine
+
+# Frames must never reach disk. These patterns are a backstop, not the control.
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.mp4
+*.ts
+*.m3u8
+frames/
+!web/public/**/*.png
+!web/public/**/*.svg
+!docs/**/*.png
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+.vercel/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Local artefacts
+*.log
+*.db
+*.sqlite3
+.DS_Store
+artifacts/
