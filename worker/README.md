@@ -80,7 +80,8 @@ collapses whenever the network is bad. A gap in the data is honest. See
 | `evaluate.py` | Stratified report, and the coverage rules that gate quoting it |
 | `features.py` | Supervised samples, with the leakage guards |
 | `forecast.py` | Time split, baselines, the booster, the comparison table |
-| `cli.py` | `run`, `once`, `label`, `evaluate`, `forecast` |
+| `drift.py` | Same-slot median comparison, and the alert thresholds |
+| `cli.py` | `run`, `once`, `label`, `evaluate`, `forecast`, `drift` |
 
 ## Configuration
 
@@ -115,7 +116,7 @@ reading for the same moment.
 ## Tests
 
 ```bash
-make test    # 194 tests, no network, no weights, no GPU
+make test    # 225 tests, no network, no weights, no GPU
 make lint
 ```
 
@@ -174,6 +175,20 @@ Three guards in `features.py`:
 And one in `forecast.py`: an embargo. Training keeps samples whose target
 precedes the cut; the test set keeps samples whose origin follows it. Splitting
 on origin alone leaves training rows whose target lands inside the test window.
+
+## Drift
+
+```bash
+python -m hallcheck.cli drift    # exits non-zero if a camera has drifted
+```
+
+Also runs automatically at 08:00 UTC inside the worker, logging alerts at
+`ERROR`. Thresholds, reasoning and the incident log are in
+[`docs/runbook.md`](../docs/runbook.md).
+
+An outage reports `insufficient_data` rather than drift. The two need
+completely different responses, and conflating them sends somebody to check a
+lens when the container is down.
 
 ## Deploying
 
