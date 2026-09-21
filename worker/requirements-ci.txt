@@ -1,0 +1,16 @@
+# What CI installs to run the test suite.
+#
+# Deliberately NOT the full dependency set. No test in this suite runs
+# inference, so pulling ultralytics means pulling torch: about 2 GB and several
+# minutes per run to exercise code that is stubbed out anyway. The modules that
+# need it import it lazily and the tests fake it.
+#
+# The trade-off is real and worth naming: this means CI does not catch a broken
+# ultralytics API. The Docker build does, because it imports ultralytics to
+# bake the weights in, and that runs on every deploy.
+
+numpy>=1.26
+opencv-python-headless>=4.10
+pytest>=8.0
+pytest-cov>=5.0
+ruff>=0.6

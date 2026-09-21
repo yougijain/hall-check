@@ -1,0 +1,53 @@
+[project]
+name = "hallcheck-worker"
+version = "0.1.0"
+description = "Frame capture, person detection and count persistence for Hall Check"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Yougi Jain", email = "yougijain@gmail.com" }]
+
+dependencies = [
+    "numpy>=1.26",
+    # Imported directly by hallcheck.capture to decode frames. Ultralytics
+    # happens to pull OpenCV in too, but relying on a transitive dependency
+    # for something we import by name is how a working build breaks on an
+    # unrelated upgrade. "headless" because a server has no display.
+    "opencv-python-headless>=4.10",
+    "ultralytics>=8.3.0",
+    "supabase>=2.9.0",
+    "apscheduler>=3.10.4",
+    "yt-dlp>=2024.8.6",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+hallcheck = "hallcheck.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["hallcheck*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning:hallcheck.*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hallcheck"]

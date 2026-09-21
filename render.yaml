@@ -1,0 +1,34 @@
+# Render blueprint for the capture worker.
+#
+# The web app is NOT here - it deploys to Vercel from the same repository with
+# its root directory set to `web/`. One repo, two targets, one schema between
+# them.
+#
+# A worker, not a cron job: the counts are only useful if their timestamps are
+# accurate, and hosted cron schedulers drift by minutes. See
+# worker/hallcheck/scheduler.py.
+
+services:
+  - type: worker
+    name: hallcheck-worker
+    runtime: docker
+    dockerfilePath: ./worker/Dockerfile
+    dockerContext: ./worker
+    plan: starter
+    region: ohio
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      # Service role key. Bypasses row level security, so it lives here and
+      # never in the web project's environment.
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: HALLCHECK_MODEL
+        value: yolo11n.pt
+      - key: HALLCHECK_CONF_THRESHOLD
+        value: "0.35"
+      - key: HALLCHECK_INTERVAL_SECONDS
+        value: "120"
+      - key: HALLCHECK_CAPTURE_TIMEOUT
+        value: "30"
