@@ -9,6 +9,7 @@ from datetime import UTC
 
 from hallcheck.config import ConfigError, load_settings
 from hallcheck.detect import YoloPersonDetector
+from hallcheck.drift import DriftStatus, check_all, render_report
 from hallcheck.evaluate import build_report, render_markdown, to_observations
 from hallcheck.features import HORIZON_MINUTES, Reading, build_samples
 from hallcheck.forecast import (
@@ -83,6 +84,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="fraction of the timeline held out, most recent first",
     )
     forecast.add_argument("-o", "--out", help="write the markdown table here instead of stdout")
+
+    sub.add_parser(
+        "drift",
+        help="compare each camera's last day against its trailing fortnight",
+    )
     return parser
 
 
@@ -117,6 +123,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "forecast":
         return _forecast(args, store)
+
+    if args.command == "drift":
+        return _drift(store)
 
     if args.command == "once":
         results = run_tick(detector, store, settings)
@@ -166,6 +175,32 @@ def _label(args, detector, store, settings) -> int:
 
     print(f"\nStored {collected} label(s).")
     return 0
+
+
+def _drift(store) -> int:
+    from datetime import datetime, timedelta
+
+    from hallcheck.drift import BASELINE_WINDOW_DAYS, RECENT_WINDOW_HOURS
+
+    now = datetime.now(tz=UTC)
+    lookback = timedelta(days=BASELINE_WINDOW_DAYS) + timedelta(hours=RECENT_WINDOW_HOURS)
+
+    readings = [
+        Reading(
+            hall_id=row["hall_id"],
+            ts=datetime.fromisoformat(row["ts"]),
+            count=int(row["count"]),
+            camera_epoch=int(row.get("camera_epoch") or 1),
+            roi_version=str(row.get("roi_version") or "v1"),
+        )
+        for row in store.counts_since(now - lookback)
+    ]
+
+    signals = check_all(readings, now=now)
+    print(render_report(signals))
+
+    # Non-zero when something is drifting, so a scheduled run can page.
+    return 1 if any(s.status is DriftStatus.ALERT for s in signals) else 0
 
 
 def _forecast(args, store) -> int:
