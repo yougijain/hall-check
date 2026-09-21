@@ -244,8 +244,15 @@ catch, and the incident log are in [`docs/runbook.md`](docs/runbook.md).
   region where a queue usually forms. People standing in it who are not queueing
   are counted; a queue that spills outside it is not. The number tracks the
   quantity of interest; it is not the quantity of interest.
-- **One camera per hall.** A hall with two entrances is being measured at one of
-  them. Nothing in the counts reveals what the other one is doing.
+- **One camera per hall, except Worcester.** UMass publishes two Worcester
+  cameras (north and south) and they are tracked as separate halls, because
+  they are separate queues and a reader choosing a door wants both. Hampshire
+  and Berkshire have one camera each, so a hall with two entrances is being
+  measured at one of them and nothing in the counts reveals what the other is
+  doing.
+- **Franklin is not measured at all.** It publishes no camera, so it is seeded
+  inactive and never appears. Its absence is a gap in coverage, not a quiet
+  hall.
 - **Accuracy is measured on labels a single person produced.** There is no
   second annotator and therefore no inter-rater agreement. The human count is
   treated as ground truth; at high occupancy it is also an estimate.

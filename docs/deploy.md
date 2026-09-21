@@ -129,21 +129,36 @@ unset.
 
 ### Stream URLs
 
-`0003_seed_halls.sql` inserts every hall with `stream_url = ''`, and the worker
-skips a hall until one is configured. Nothing is captured until you set them:
+Every hall is seeded with `stream_url = ''`, and the worker skips a hall until
+one is configured. Nothing is captured until you set them:
 
 ```sql
-update public.halls set stream_url = 'https://…' where hall_id = 'worcester';
+update public.halls set stream_url = 'https://…' where hall_id = 'worcester_north';
 ```
 
-or per-hall, without touching the database, via `HALLCHECK_STREAM_WORCESTER` on
-the worker.
+or without touching the database, via `HALLCHECK_STREAM_<HALL_ID>` on the
+worker — `HALLCHECK_STREAM_WORCESTER_NORTH` and so on.
 
-The design assumes UMass publishes a public video stream per dining common.
-**Confirm that before counting on any of this** — find the actual page, check
-what it serves, and whether the terms permit reading it. If a hall streams
-through a watch page rather than a direct `.m3u8`, the worker resolves it with
-yt-dlp automatically.
+The cameras UMass actually publishes are at
+[umassdining.com/livestream](https://www.umassdining.com/livestream), and the
+roster does not match the obvious guess:
+
+| hall_id | Camera |
+|---|---|
+| `worcester_north` | Worcester Commons, north |
+| `worcester_south` | Worcester Commons, south |
+| `hampshire` | Hampshire Commons |
+| `berkshire` | Berkshire Commons |
+| `franklin` | **None.** Seeded `active = false` |
+
+Worcester has two cameras and Franklin has none, which is why `0005` exists.
+Blue Wall, Harvest and Roots also stream but are retail rather than dining
+commons, and are deliberately not seeded.
+
+If a camera streams through a watch page rather than a direct `.m3u8`, the
+worker resolves it with yt-dlp automatically, so the watch URL is a fine value
+for `stream_url`. Check what the page actually serves, and that the terms
+permit reading it.
 
 ### ROI polygons
 
