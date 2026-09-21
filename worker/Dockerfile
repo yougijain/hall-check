@@ -28,12 +28,19 @@ COPY hallcheck ./hallcheck
 # Bake the weights in. Fetching them on first run makes a cold start depend on
 # a third-party host being up, and turns a redeploy into a silent five-minute
 # outage when it is not.
-RUN python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')" \
-    && find / -name 'yolo11n.pt' -maxdepth 4 -print
+#
+# .github/workflows/publish-worker.yml proves this held, by loading the model
+# in the built image with the network disabled. If the weights ever stop being
+# baked, the container would quietly reach out on first run instead and only
+# fail when that host is down - which is exactly the failure this avoids.
+RUN python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
 
-# Not root. The worker needs no filesystem access beyond /tmp.
-RUN useradd --create-home --uid 10001 worker \
-    && chown -R worker:worker /app /tmp/ultralytics 2>/dev/null || true
+# Not root. The worker needs no filesystem access beyond /app and its cache
+# directories, all of which are created here so the chown cannot silently miss
+# one.
+RUN mkdir -p "$YOLO_CONFIG_DIR" "$MPLCONFIGDIR" \
+    && useradd --create-home --uid 10001 worker \
+    && chown -R worker:worker /app "$YOLO_CONFIG_DIR" "$MPLCONFIGDIR"
 USER worker
 
 CMD ["python", "-m", "hallcheck.cli", "run"]

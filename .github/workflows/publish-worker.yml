@@ -1,0 +1,129 @@
+name: Publish worker image
+
+# Builds worker/Dockerfile and pushes it to GHCR so a host (Render, Fly, a box
+# with docker) can run the worker by pulling an image rather than building one.
+#
+# This is also the only place the Dockerfile is exercised at all. The CI
+# workflow deliberately installs a light dependency set and never imports
+# ultralytics (see worker/requirements-ci.txt), so a break in the real runtime
+# image would otherwise surface for the first time during a deploy.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - ".github/workflows/publish-worker.yml"
+  pull_request:
+    paths:
+      - "worker/**"
+      - ".github/workflows/publish-worker.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/worker
+
+jobs:
+  publish:
+    name: build, smoke test, push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image locally
+        uses: docker/build-push-action@v6
+        with:
+          context: ./worker
+          file: ./worker/Dockerfile
+          # Loaded into the local daemon rather than pushed, so the smoke test
+          # below runs against the exact bytes that will be published.
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}:smoke
+          # Torch and its CUDA-less wheels dominate the build. Without a cache
+          # every run re-downloads roughly a gigabyte.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: ffmpeg is present
+        # The worker starts fine without it and then fails every capture, which
+        # looks like four dead cameras rather than a missing package.
+        run: docker run --rm ${{ env.IMAGE }}:smoke ffmpeg -version | head -1
+
+      - name: The CLI starts and reports its commands
+        run: docker run --rm ${{ env.IMAGE }}:smoke python -m hallcheck.cli --help
+
+      - name: Model weights are baked in, not fetched at runtime
+        # --network none is the whole point of this step. The Dockerfile bakes
+        # the weights so a cold start does not depend on a third-party host
+        # being up; if that ever silently stops working, the container would
+        # quietly reach out on first run instead, and only fail when the host
+        # is down. With no network, a missing weight file fails here.
+        run: |
+          docker run --rm --network none ${{ env.IMAGE }}:smoke \
+            python -c "from ultralytics import YOLO; YOLO('yolo11n.pt'); print('weights loaded offline')"
+
+      - name: Missing configuration fails fast with a readable error
+        # Documented behaviour: exit code 2 and every missing variable named at
+        # once, rather than discovering them one redeploy at a time.
+        run: |
+          set +e
+          output=$(docker run --rm --network none ${{ env.IMAGE }}:smoke python -m hallcheck.cli once 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          test "$code" -eq 2 || { echo "expected exit 2, got $code"; exit 1; }
+          echo "$output" | grep -q "SUPABASE_URL" || { echo "error did not name SUPABASE_URL"; exit 1; }
+          echo "$output" | grep -q "SUPABASE_SERVICE_KEY" || { echo "error did not name SUPABASE_SERVICE_KEY"; exit 1; }
+
+      - name: It runs as a non-root user
+        run: |
+          user=$(docker run --rm ${{ env.IMAGE }}:smoke id -un)
+          test "$user" = "worker" || { echo "expected to run as worker, got $user"; exit 1; }
+          echo "running as $user"
+
+      - name: Report image size
+        run: docker image inspect ${{ env.IMAGE }}:smoke --format '{{.Size}}' | awk '{printf "%.0f MB\n", $1/1024/1024}'
+
+      # Nothing is published from a pull request. A PR gets the build and every
+      # check above; only main produces an image a host could pull.
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags
+        if: github.event_name != 'pull_request'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./worker
+          file: ./worker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Served entirely from the cache populated above, so this re-uses the
+          # layers the smoke test just ran against rather than rebuilding them.
+          cache-from: type=gha

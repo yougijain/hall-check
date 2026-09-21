@@ -1,0 +1,30 @@
+# The build context is worker/. Without this, every local artefact is shipped
+# to the daemon and any change to one busts the layer cache.
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Tests do not run in the image; CI runs them against the source tree.
+tests/
+conftest.py
+
+# Never bake a real environment file into an image.
+.env
+.env.*
+!.env.example
+
+# Weights are downloaded during the build, not copied from a developer machine.
+*.pt
+*.onnx
+
+Makefile
+README.md
+requirements-ci.txt
