@@ -258,6 +258,11 @@ catch, and the incident log are in [`docs/runbook.md`](docs/runbook.md).
 See [`worker/README.md`](worker/README.md) for the worker and
 [`web/README.md`](web/README.md) for the site. Neither requires a GPU.
 
+To deploy, [`docs/deploy.md`](docs/deploy.md) covers the database, the worker
+and the site in the order they have to happen — including the two pieces of
+configuration that are deliberately left unset, without which a correctly
+deployed Hall Check records nothing at all.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
