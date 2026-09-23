@@ -14,7 +14,18 @@ services:
     runtime: docker
     dockerfilePath: ./worker/Dockerfile
     dockerContext: ./worker
-    plan: starter
+    # Not starter. Starter is 512 MB, and importing torch costs roughly
+    # 400-500 MB resident before YOLO is even loaded - the container OOMs
+    # during startup rather than during a capture, which makes it look like a
+    # broken image instead of an undersized instance.
+    #
+    # Measured footprint is about 700 MB with the model loaded and one frame
+    # in flight. standard (2 GB) leaves real headroom; anything at or under
+    # 1 GB is worth watching.
+    #
+    # Fly.io's shared-cpu-1x with 1 GB runs the same image for appreciably
+    # less if cost matters more than headroom.
+    plan: standard
     region: ohio
     autoDeploy: true
     envVars:

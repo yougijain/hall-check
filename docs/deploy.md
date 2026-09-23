@@ -58,7 +58,14 @@ ghcr.io/yougijain/hall-check/worker:latest
 ```
 
 On Render: **New → Web Service → Deploy an existing image**, paste that URL,
-and choose an instance with at least 1 GB of memory.
+and choose an instance with **at least 1 GB of memory** — Render's `standard`,
+not `starter`.
+
+Importing torch costs roughly 400-500 MB resident before YOLO is loaded, and
+the footprint is about 700 MB with the model up and a frame in flight. On a
+512 MB instance the container OOMs during startup, which reads as a broken
+image rather than an undersized box. Fly.io's shared-cpu-1x with 1 GB runs the
+same image for appreciably less if cost matters more than headroom.
 
 The package is private until you make it public. GitHub → your profile →
 Packages → `worker` → Package settings → Change visibility → Public. Leave it
