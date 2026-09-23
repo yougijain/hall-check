@@ -21,16 +21,20 @@ psql "$SUPABASE_DB_URL" -f db/migrations/0003_seed_halls.sql
 
 or `supabase db push` against a linked project.
 
-Then verify the access model actually took, rather than assuming it did:
+Then verify the access model and the ROI polygons actually took, rather than
+assuming they did:
 
 ```bash
 psql "$SUPABASE_DB_URL" -f db/tests/access_model.sql
+psql "$SUPABASE_DB_URL" -f db/tests/roi_sanity.sql
 ```
 
-It asserts three reads succeed and nine writes and private reads are refused,
-and prints `access model verified`. This is worth running against the real
-project and not just in CI: the anon key ships inside the browser bundle, so
-the blast radius of a wrong grant is "anyone can write to your database".
+`access_model.sql` asserts three reads succeed and nine writes and private
+reads are refused, and prints `access model verified`. `roi_sanity.sql` checks
+every polygon against the rules the worker enforces at load and prints what
+each hall ships with. Both are worth running against the real project and not
+just in CI: the anon key ships inside the browser bundle, so the blast radius
+of a wrong grant is "anyone can write to your database".
 
 Two keys come out of the project settings, and they are not interchangeable:
 
@@ -178,11 +182,32 @@ permit reading it.
 
 ### ROI polygons
 
-The seeded polygons are placeholders: a centred box over the middle of the
-frame, marked `roi_version = 'v0-placeholder'` so no count produced under one
-can be mistaken for a real measurement.
+Every hall ships with `roi_version = 'v0-geometry-prior'` and the same
+polygon, set by `0007`:
 
-They must be redrawn against a real frame from each camera before any count
+```
+[[0.30, 0.35], [0.70, 0.35], [0.95, 1.00], [0.05, 1.00]]
+```
+
+**Nobody has looked at these frames.** It is not a queue region, it is a guess
+about where a queue sits given how a dining hall camera is mounted — a
+trapezoid because a camera angled down at a floor sees a fixed-width corridor
+as narrow far away and wide up close, reaching the bottom edge because the
+near field is where the counter is, and stopping at `y = 0.35` because above
+that a person is small enough that the detector is unreliable on them and the
+band is mostly people walking through to somewhere else.
+
+It covers 0.42 of the frame, which is wide, deliberately. The two failure
+modes are not symmetric: too wide inflates the count but keeps it monotone in
+occupancy, while too tight returns zeros that read as a quiet hall.
+
+The `v0-` prefix is load-bearing. It means *not drawn against a frame*, and a
+count stamped `v0-geometry-prior` is not a measurement of a queue — it is the
+worker proving it can see, on a region chosen sight-unseen. Every camera has
+the same polygon for the same reason: numbers that differed per hall would
+read as though someone had drawn them.
+
+So the regions still must be redrawn against a real frame before any count
 means anything. A polygon over the whole frame counts people eating at tables
 and calls it a queue — a different quantity that happens to correlate, which is
 exactly enough to be misleading.
@@ -194,7 +219,7 @@ pixels, so a change in stream resolution does not silently move the region:
 update public.halls
    set roi_polygon = '[[0.31,0.42],[0.68,0.40],[0.72,0.88],[0.27,0.90]]'::jsonb,
        roi_version = 'v1'
- where hall_id = 'worcester';
+ where hall_id = 'worcester_north';
 ```
 
 Bump `roi_version` whenever the shape changes, and `camera_epoch` whenever the
@@ -204,10 +229,14 @@ are stamped on every row so later queries can tell.
 
 ## Order of operations
 
-1. Migrations applied, `access_model.sql` verified.
+1. Migrations applied, `access_model.sql` and `roi_sanity.sql` verified.
 2. Stream URLs set for at least one hall.
 3. Worker deployed; `hallcheck once` returns a count rather than a skip.
-4. ROI polygons redrawn against real frames; `roi_version` bumped.
+4. ROI polygons redrawn against real frames; `roi_version` bumped off the
+   `v0-` prefix. Until this is done the counts are a demonstration, not data.
+
+`db/tests/roi_sanity.sql` checks every polygon against the rules the worker
+enforces at load, and runs in CI. Run it after any hand-written `UPDATE`.
 5. Site deployed.
 6. Leave it collecting. M2 labelling needs model counts to pair against, and
    the M4 forecast needs weeks of history before it can be trained at all.

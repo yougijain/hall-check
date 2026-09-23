@@ -240,6 +240,13 @@ catch, and the incident log are in [`docs/runbook.md`](docs/runbook.md).
   loses the back of it, so error is not symmetric — the model under-counts worst
   at the moment the answer is most useful. A single MAE figure averaged across
   the day hides this, which is why the tables are stratified.
+- **No ROI has been drawn against a real frame yet.** Every camera currently
+  carries the same polygon, stamped `roi_version = 'v0-geometry-prior'` — a
+  trapezoid over the lower two thirds of the frame, chosen from how a dining
+  hall camera is typically mounted rather than from looking at one. The `v0-`
+  prefix marks it: counts produced under it show the pipeline works end to
+  end, and are not measurements of a queue. Everything below about ROI
+  behaviour applies doubly until the regions are drawn and the version bumped.
 - **The ROI is a proxy for a line, not a line.** It is a fixed polygon over a
   region where a queue usually forms. People standing in it who are not queueing
   are counted; a queue that spills outside it is not. The number tracks the

@@ -23,6 +23,7 @@ psql "$SUPABASE_DB_URL" -f db/migrations/0001_init.sql
 | `0004_harden_function_search_path.sql` | Pins `search_path` on the `updated_at` trigger function |
 | `0005_reconcile_halls_with_live_streams.sql` | Splits Worcester into its two cameras; deactivates Franklin, which has none |
 | `0006_hampshire_cameras_and_blue_wall.sql` | Splits Hampshire into its two cameras; records Blue Wall, inactive |
+| `0007_roi_geometry_prior.sql` | Replaces the placeholder ROI box with a perspective prior; still `v0-`, still undrawn |
 
 ## Access model
 
