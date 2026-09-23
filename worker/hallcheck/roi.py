@@ -27,6 +27,22 @@ Point = tuple[float, float]
 # would be zero. Fail loudly at load rather than quietly forever.
 MIN_ROI_AREA = 1e-4
 
+# The largest anchor coordinate a polygon can actually contain.
+#
+# `contains` treats edges as half-open in y, so a point at the polygon's
+# maximum y falls outside it. That is normally a measure-zero detail. It is
+# not here: the detector's normalised output clamps at the frame edge, so
+# every person whose feet are cut off by the bottom of the frame arrives with
+# an anchor of exactly 1.0 and lands on that boundary. Clipping piles real
+# detections onto the one value the test rejects, and no polygon can reach
+# them - vertices above 1.0 are refused as outside the frame.
+#
+# Pulling the anchor a hair inside the frame puts the decision back with the
+# polygon: an ROI drawn to the bottom edge counts those people, one that stops
+# short still does not. The offset is ~1e-6 of a pixel on a 1080p frame, far
+# below the precision of anything it is compared against.
+FRAME_INTERIOR = 1.0 - 1e-9
+
 
 class InvalidRoi(ValueError):
     """The polygon could not be used as a queue region."""
@@ -59,8 +75,11 @@ class BoundingBox:
         clipped by the frame edge have centres that drift toward the middle of
         the frame, so the bias is not even uniform. Someone occupies the floor
         they stand on, so the floor is what gets tested.
+
+        Feet below the bottom of the frame are reported at exactly 1.0 by the
+        detector's clamp; see FRAME_INTERIOR for why that needs nudging inside.
         """
-        return ((self.x1 + self.x2) / 2.0, self.y2)
+        return ((self.x1 + self.x2) / 2.0, min(self.y2, FRAME_INTERIOR))
 
 
 @dataclass(frozen=True, slots=True)
