@@ -127,3 +127,9 @@ jobs:
         # and, more importantly, everything it must be refused. A grant added
         # for convenience and forgotten fails the build here.
         run: psql -X -v ON_ERROR_STOP=1 -f db/tests/access_model.sql
+
+      - name: Verify every ROI polygon
+        # The worker validates its ROI per hall, at startup, in production - so
+        # a bad polygon is one hall quietly not reporting while the rest carry
+        # on. The same rules are asserted here against every row instead.
+        run: psql -X -v ON_ERROR_STOP=1 -f db/tests/roi_sanity.sql

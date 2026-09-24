@@ -85,6 +85,37 @@ class TestAnchor:
         assert SQUARE.contains((0.4, centre_y)), "precondition: centre falls inside"
         assert not SQUARE.contains(leaning.anchor)
 
+    def test_feet_clipped_by_the_frame_edge_stay_countable(self):
+        # The detector clamps normalised coordinates at the frame, so a person
+        # standing close enough that their feet leave the bottom of the shot
+        # arrives with y2 exactly 1.0. `contains` treats edges as half-open in
+        # y, so that value sits outside every polygon - including one drawn to
+        # the bottom edge, and no polygon may reach past it. Without the nudge
+        # the whole near field is silently uncountable.
+        full_height = Roi(
+            version="to-the-edge",
+            vertices=((0.3, 0.35), (0.7, 0.35), (0.95, 1.0), (0.05, 1.0)),
+        )
+        clipped = BoundingBox(x1=0.45, y1=0.4, x2=0.55, y2=1.0, confidence=0.9)
+        assert clipped.anchor[1] < 1.0
+        assert full_height.contains(clipped.anchor)
+
+    def test_the_nudge_does_not_reach_into_a_region_that_stops_short(self):
+        # The fix must not turn the bottom edge into a magnet. An ROI that
+        # deliberately excludes the near field still excludes it.
+        stops_short = Roi(
+            version="stops-short",
+            vertices=((0.3, 0.35), (0.7, 0.35), (0.7, 0.8), (0.3, 0.8)),
+        )
+        clipped = BoundingBox(x1=0.45, y1=0.4, x2=0.55, y2=1.0, confidence=0.9)
+        assert not stops_short.contains(clipped.anchor)
+
+    def test_the_nudge_is_below_single_pixel_precision(self):
+        # It exists to break a tie, not to move the anchor. On a 4K frame the
+        # shift must still be far under one pixel, or it is a silent bias.
+        box = BoundingBox(x1=0.4, y1=0.2, x2=0.6, y2=1.0, confidence=0.9)
+        assert (1.0 - box.anchor[1]) * 2160 < 1e-3
+
 
 class TestCountInside:
     def test_counts_only_anchors_in_the_region(self):
