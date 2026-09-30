@@ -61,9 +61,15 @@ to `main` that touches `worker/`, smoke tests it, and pushes to:
 ghcr.io/yougijain/hall-check/worker:latest
 ```
 
-On Render: **New → Web Service → Deploy an existing image**, paste that URL,
-and choose an instance with **at least 1 GB of memory** — Render's `standard`,
-not `starter`.
+On Render: **New → Background Worker → Deploy an existing image**, paste that
+URL, and choose an instance with **at least 1 GB of memory** — Render's
+`standard`, not `starter`.
+
+A Background Worker, not a Web Service. `worker/Dockerfile` runs
+`hallcheck.cli run`, which is a scheduler loop: it binds no port and the image
+declares no `EXPOSE`. Render waits for a Web Service to open one and kills the
+service when it never does, so the wrong service type fails with "no open ports
+detected" on a container that is working correctly.
 
 Importing torch costs roughly 400-500 MB resident before YOLO is loaded, and
 the footprint is about 700 MB with the model up and a frame in flight. On a
@@ -85,8 +91,11 @@ a small instance is slow and can exceed the build timeout.
 
 ### Environment
 
-Set these on the service. The first two have no defaults and the worker refuses
-to start without them, naming both at once.
+Set the first two on the service. They have no defaults and the worker refuses
+to start without them, naming both at once. The rest carry the defaults below
+in `worker/hallcheck/config.py`, so a deployment that wants them does not need
+to set them — `render.yaml` states them explicitly because a blueprint is a
+record of intent, not because the worker requires it.
 
 | Variable | Value |
 |---|---|
