@@ -73,6 +73,38 @@ jobs:
           docker run --rm --network none ${{ env.IMAGE }}:smoke \
             python -c "from ultralytics import YOLO; YOLO('yolo11n.pt'); print('weights loaded offline')"
 
+      - name: torch is the CPU build, with no CUDA runtime in the image
+        # The reason this is a test and not a comment: `pip install .` alone
+        # resolves torch from PyPI, whose linux x86_64 wheel is the CUDA build
+        # and vendors over a gigabyte of NVIDIA runtime onto a machine with no
+        # GPU. The Dockerfile installs torch from the CPU index first to avoid
+        # that, and nothing about a passing build would reveal if that line
+        # were dropped - the image would just quietly get a gigabyte bigger
+        # and need a larger instance.
+        run: |
+          docker run --rm --network none ${{ env.IMAGE }}:smoke python - <<'PY'
+          import torch
+          assert torch.version.cuda is None, f"CUDA build of torch: {torch.version.cuda}"
+          assert not torch.cuda.is_available(), "torch reports a GPU in a CPU image"
+          print(f"torch {torch.__version__}, CPU build")
+          PY
+
+      - name: No NVIDIA runtime packages are installed
+        # The assertion above reads torch's own metadata. This one reads the
+        # environment, so a wheel that reports itself as CPU while still
+        # dragging the NVIDIA libraries in as dependencies is still caught.
+        run: |
+          set +e
+          nvidia=$(docker run --rm --network none ${{ env.IMAGE }}:smoke \
+            pip list --format=freeze | grep -i '^nvidia-')
+          set -e
+          if [ -n "$nvidia" ]; then
+            echo "NVIDIA packages present in a CPU-only image:"
+            echo "$nvidia"
+            exit 1
+          fi
+          echo "no nvidia-* packages"
+
       - name: Missing configuration fails fast with a readable error
         # Documented behaviour: exit code 2 and every missing variable named at
         # once, rather than discovering them one redeploy at a time.
