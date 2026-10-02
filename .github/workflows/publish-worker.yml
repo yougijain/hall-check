@@ -81,29 +81,53 @@ jobs:
         # that, and nothing about a passing build would reveal if that line
         # were dropped - the image would just quietly get a gigabyte bigger
         # and need a larger instance.
+        #
+        # `-i` is load-bearing. Without it `docker run` does not attach stdin,
+        # so `python -` reads EOF, runs an empty program and exits 0 - a test
+        # that passes without executing a line of itself. The sentinel below
+        # is the guard against that happening again: a vacuous run prints
+        # nothing, so the grep fails even though the exit code is clean.
         run: |
-          docker run --rm --network none ${{ env.IMAGE }}:smoke python - <<'PY'
+          set +e
+          out=$(docker run --rm -i --network none ${{ env.IMAGE }}:smoke python - <<'PY'
           import torch
+
           assert torch.version.cuda is None, f"CUDA build of torch: {torch.version.cuda}"
           assert not torch.cuda.is_available(), "torch reports a GPU in a CPU image"
-          print(f"torch {torch.__version__}, CPU build")
+          print(f"CPU-BUILD-CONFIRMED torch {torch.__version__}")
           PY
+          )
+          code=$?
+          set -e
+          echo "$out"
+          test "$code" -eq 0 || { echo "the torch check failed"; exit 1; }
+          echo "$out" | grep -q CPU-BUILD-CONFIRMED \
+            || { echo "the torch check did not execute - stdin not attached?"; exit 1; }
 
-      - name: No NVIDIA runtime packages are installed
+      - name: No CUDA runtime packages are installed
         # The assertion above reads torch's own metadata. This one reads the
         # environment, so a wheel that reports itself as CPU while still
         # dragging the NVIDIA libraries in as dependencies is still caught.
+        #
+        # nvidia-ml-py is exempt and is not an oversight. It is a pure-Python
+        # binding to NVML, about 100 KB with no CUDA binaries in it, which
+        # ultralytics depends on unconditionally so it can report GPU
+        # telemetry when there is a GPU to report on. It arrives whichever
+        # torch wheel is installed, so matching it says nothing about the one
+        # that is. The packages this is looking for are the ones that vendor
+        # shared objects - nvidia-cudnn-cu12, nvidia-cublas-cu12, nvidia-nccl
+        # and the rest - and those are still matched.
         run: |
           set +e
           nvidia=$(docker run --rm --network none ${{ env.IMAGE }}:smoke \
-            pip list --format=freeze | grep -i '^nvidia-')
+            pip list --format=freeze | grep -i '^nvidia-' | grep -vi '^nvidia-ml-py==')
           set -e
           if [ -n "$nvidia" ]; then
-            echo "NVIDIA packages present in a CPU-only image:"
+            echo "CUDA runtime packages present in a CPU-only image:"
             echo "$nvidia"
             exit 1
           fi
-          echo "no nvidia-* packages"
+          echo "no CUDA runtime packages"
 
       - name: Missing configuration fails fast with a readable error
         # Documented behaviour: exit code 2 and every missing variable named at
