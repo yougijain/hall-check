@@ -52,6 +52,21 @@ The worker is a resident process, not a cron job — the counts are only useful
 if their timestamps are accurate, and hosted cron schedulers drift by minutes.
 See `worker/hallcheck/scheduler.py`.
 
+Three hosts are described below. They run the same image; pick on cost.
+
+| Host | Instance | Rough cost | Notes |
+|---|---|---|---|
+| **Fly.io** | `shared-cpu-1x`, 1 GB | ~$5-7/mo | `fly.toml` at the repo root. Cheapest that fits. |
+| Render | `standard`, 2 GB | ~$25/mo | `render.yaml`. Its 512 MB `starter` does not fit. |
+| Anywhere with Docker | — | — | It is one container and two environment variables. |
+
+The workload is five halls, one frame each every two minutes, YOLO11n at
+roughly 50-100 ms a frame — about six minutes of CPU a day. The instance is
+sized by torch's resident footprint, not by compute, which is why
+`worker/Dockerfile` installs the CPU-only torch wheel: PyPI's default wheel for
+linux x86_64 is the CUDA build and vendors over a gigabyte of NVIDIA runtime
+onto a machine with no GPU. CI asserts it stays that way.
+
 ### Option A: pull the published image (recommended)
 
 `.github/workflows/publish-worker.yml` builds `worker/Dockerfile` on every push
@@ -84,10 +99,38 @@ private and Render needs registry credentials instead.
 Pulling beats building here: the image carries torch, so a build from source on
 a small instance is slow and can exceed the build timeout.
 
-### Option B: build from source
+### Option B: Fly.io
+
+`fly.toml` at the repository root pulls the published image onto a 1 GB
+`shared-cpu-1x` machine. It declares no service, because the worker binds no
+port — declaring one would make Fly health-check a port that never opens and
+cycle the machine.
+
+```bash
+fly launch --no-deploy --copy-config
+fly secrets set SUPABASE_URL=https://<project>.supabase.co
+fly secrets set SUPABASE_SERVICE_KEY=<service_role key>
+fly deploy
+```
+
+Secrets go through `fly secrets`, never into `fly.toml` — the file is in git
+and the service role key bypasses row level security.
+
+Verify the same way as anywhere else:
+
+```bash
+fly ssh console -C "python -m hallcheck.cli once"
+```
+
+### Option C: build from source
 
 `render.yaml` at the repository root defines the service as a Docker build from
 `worker/Dockerfile`. **New → Blueprint**, point it at the repo.
+
+Slower than pulling: the build compiles a torch-sized image on the host's
+builder, work the publish workflow has already done and smoke tested. Set
+**Root Directory** to `worker` so the Docker build context matches what the
+Dockerfile's `COPY` lines expect.
 
 ### Environment
 

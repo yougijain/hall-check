@@ -1,0 +1,46 @@
+# Fly.io deployment for the capture worker.
+#
+# The same image Render would run, on a machine sized for what it actually
+# does. See render.yaml for the Render equivalent and docs/deploy.md for why
+# both exist: Render's smallest instance that fits is 2 GB at about $25/month,
+# Fly's shared-cpu-1x with 1 GB is closer to $5-7, and the workload does not
+# care which it runs on.
+#
+# What the workload actually is, since the cost follows from it: five halls,
+# one frame each every two minutes, YOLO11n at roughly 50-100 ms a frame. That
+# is about six minutes of CPU a day. The instance is sized by torch's resident
+# footprint, not by compute - which is why the CPU-only torch wheel in
+# worker/Dockerfile is what makes 1 GB viable at all.
+#
+# Secrets are NOT here. SUPABASE_SERVICE_KEY bypasses row level security and
+# is the only credential that writes, so it is set out of band:
+#
+#     fly secrets set SUPABASE_URL=https://<project>.supabase.co
+#     fly secrets set SUPABASE_SERVICE_KEY=<service_role key>
+#
+# Deploy with:  fly deploy
+# First time:   fly launch --no-deploy --copy-config   then set secrets, then deploy
+
+app = "hallcheck-worker"
+primary_region = "iad"
+
+[build]
+  # Pull the image the publish workflow already built and smoke tested rather
+  # than rebuilding from source. The build is torch-sized and Fly's builder
+  # would redo work GitHub Actions has already done and verified.
+  image = "ghcr.io/yougijain/hall-check/worker:latest"
+
+# No [http_service] and no [[services]] on purpose. The worker binds no port;
+# it is a scheduler loop. Declaring a service would make Fly health-check a
+# port that never opens and cycle the machine.
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
+  # A safety net, not a plan. Resident footprint should sit comfortably under
+  # 1 GB with the CPU-only torch wheel, but a transient spike during model
+  # load on a 1 GB box is the difference between a slow start and an OOM kill
+  # that looks like a crash loop. Swap on a process that is idle 99% of the
+  # time costs nothing in practice.
+  swap_size_mb = 512
