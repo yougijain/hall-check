@@ -1,4 +1,6 @@
-# Detection runs on CPU, so this is a plain slim image with no CUDA layers.
+# Detection runs on CPU. The base image carries no CUDA, and neither do the
+# wheels - see the torch install below, which is the part that actually
+# decides.
 FROM python:3.11-slim
 
 # ffmpeg is how frames are pulled from the HLS streams; without it the worker
@@ -20,7 +22,27 @@ WORKDIR /app
 
 # Dependencies first so a code change does not re-resolve the whole tree.
 COPY pyproject.toml ./
+
+# torch comes first, and from PyTorch's CPU index rather than PyPI.
+#
+# ultralytics depends on torch, and the torch wheel PyPI serves for linux
+# x86_64 is the CUDA build: it vendors cuDNN, cuBLAS, NCCL and the rest of the
+# NVIDIA runtime, well over a gigabyte of it. Installing the package without
+# pinning an index drags all of that onto a machine that has no GPU and never
+# will - the model is YOLO11n on a frame every two minutes.
+#
+# The cost is not only disk. A larger image is slower to pull on every cold
+# start and every redeploy, and the resident footprint is what decides which
+# instance tier this fits on, which is a real monthly number.
+#
+# Installing torch first means the ultralytics install below resolves its
+# torch requirement against what is already present instead of fetching the
+# PyPI wheel. Pinning the index on both commands would be the belt-and-braces
+# version; it is one index for one package, and the second command needs PyPI
+# for everything else.
 RUN python -m pip install --upgrade pip \
+    && python -m pip install --no-cache-dir \
+        torch --index-url https://download.pytorch.org/whl/cpu \
     && python -m pip install --no-cache-dir .
 
 COPY hallcheck ./hallcheck
