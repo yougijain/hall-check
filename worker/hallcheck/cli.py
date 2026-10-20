@@ -21,6 +21,7 @@ from hallcheck.forecast import (
 from hallcheck.forecast import render_markdown as render_forecast
 from hallcheck.labeling import LIGHTING, MEALS, LabelAborted, run_label_session
 from hallcheck.pipeline import run_tick
+from hallcheck.staleness import STALE_AFTER_HOURS
 from hallcheck.store import SupabaseStore
 
 log = logging.getLogger("hallcheck")
@@ -89,6 +90,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "drift",
         help="compare each camera's last day against its trailing fortnight",
     )
+
+    health = sub.add_parser(
+        "health",
+        help="report which cameras have stopped producing counts",
+    )
+    health.add_argument(
+        "--stale-after-hours",
+        type=int,
+        default=STALE_AFTER_HOURS,
+        help=f"hours without a reading before a hall is stale (default {STALE_AFTER_HOURS})",
+    )
+    health.add_argument("-o", "--out", help="write the markdown report here instead of stdout")
     return parser
 
 
@@ -126,6 +139,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "drift":
         return _drift(store)
+
+    if args.command == "health":
+        return _health(args, store)
 
     if args.command == "once":
         results = run_tick(detector, store, settings)
@@ -175,6 +191,36 @@ def _label(args, detector, store, settings) -> int:
 
     print(f"\nStored {collected} label(s).")
     return 0
+
+
+def _health(args, store) -> int:
+    """Report halls that have stopped reporting, and exit non-zero if any have.
+
+    Non-zero so a nightly cron can be the whole alerting mechanism: no counts
+    for six hours is a condition a scheduler already knows how to shout about.
+    """
+    from datetime import datetime, timedelta
+
+    from hallcheck.staleness import LOOKBACK_HOURS, check, render_report
+
+    now = datetime.now(tz=UTC)
+    readings = store.counts_since(now - timedelta(hours=LOOKBACK_HOURS))
+    report = check(
+        store.active_halls(),
+        readings,
+        now=now,
+        stale_after_hours=args.stale_after_hours,
+    )
+
+    rendered = render_report(report)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as handle:
+            handle.write(rendered)
+        log.info("wrote %s", args.out)
+    else:
+        print(rendered, end="")
+
+    return 0 if report.ok else 1
 
 
 def _drift(store) -> int:
