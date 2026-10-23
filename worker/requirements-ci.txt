@@ -16,6 +16,10 @@ scikit-learn>=1.5
 # Pure Python and tiny. Included so the scheduler wiring - the drift job's
 # trigger, and its refusal to take the capture loop down - is actually tested.
 apscheduler>=3.10.4
+# Pure Python, a few MB. The format selector is only meaningful run through
+# yt-dlp's own selection logic; a faked YoutubeDL accepts any string, which is
+# how a selector that matches nothing on YouTube's live streams shipped.
+yt-dlp>=2024.8.6
 pytest>=8.0
 pytest-cov>=5.0
 ruff>=0.6
