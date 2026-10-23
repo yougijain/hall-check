@@ -230,6 +230,16 @@ An outage reports `insufficient_data`, not drift. They need completely
 different responses, and conflating them sends somebody to check a lens when
 the container is down.
 
+Which is why outages get their own check. Drift compares counts to counts, so a
+camera that stops reporting makes it go *quiet* rather than loud — the hall
+degrades to `insufficient_data` and drops out of the report entirely. The
+failure that most wants an alarm is the one that disables it. `hallcheck
+health` lists every active hall with the age of its last reading and exits
+non-zero if any has gone silent, which is enough for a nightly cron to be the
+whole alerting mechanism. The expected cause over a long collection is a
+YouTube live stream restarting under a new video id, which takes out one camera
+and nothing else.
+
 The full reasoning for every threshold, what the check deliberately will not
 catch, and the incident log are in [`docs/runbook.md`](docs/runbook.md).
 

@@ -111,13 +111,49 @@ The log is the only evidence that the thresholds are set anywhere near right.
 
 | Date | Hall | Change | Cause | Action |
 |---|---|---|---|---|
-| — | — | — | — | *No incidents recorded yet. The check is deployed and has not fired.* |
+| — | — | — | — | *No incidents recorded yet. The check is written and tested; it has never run against live data, because no counts have been collected yet.* |
+
+An empty log here means nothing about the thresholds. They have not been tested
+by a single real alert, and the first few will probably be wrong.
 
 ---
 
+## A camera has stopped reporting
+
+Symptom: one hall is missing from the site while the rest are fine, or
+`hallcheck health` exits non-zero.
+
+```bash
+python -m hallcheck.cli health
+```
+
+Prints one row per active hall and exits non-zero if any has gone quiet, so a
+nightly cron needs no other alerting. The default is six hours without a
+reading — 180 consecutive missed captures at the two-minute interval, which is
+long enough that a redeploy or a network blip does not fire it.
+
+**Why this is not the drift check.** Drift compares counts to counts, and needs
+`MIN_READINGS_PER_SLOT` observations before it will say anything. A camera that
+stops reporting therefore makes the drift check go *quiet* — the hall degrades
+to `insufficient_data` and drops out of the report. The failure that most wants
+an alarm is the one that disables that alarm, which is why the two are separate
+commands.
+
+**The likeliest cause is a rotated stream id.** A YouTube live stream that
+restarts comes back under a new video id. The stored `stream_url` resolves to
+nothing, that hall alone stops producing counts, and nothing else notices. Fix
+by updating `halls.stream_url` with the current id — no redeploy, the worker
+reads the table every tick.
+
+If *every* hall is silent at once, that is one fault rather than several: the
+worker is stopped, out of credentials, or cannot reach the database. The report
+says so explicitly rather than listing five identical alerts. Go to the section
+below.
+
 ## Worker not recording counts
 
-Symptom: the site shows "No recent data" for every hall.
+Symptom: the site shows "No recent data" for every hall, or `hallcheck health`
+reports every hall silent.
 
 1. `python -m hallcheck.cli once` — captures each hall and prints the result per
    hall, so a dead camera is immediately distinguishable from a dead worker.
