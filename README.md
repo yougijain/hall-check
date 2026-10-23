@@ -75,7 +75,7 @@ would cost roughly 3,600× more compute to answer the same question.
 | `worker/hallcheck/` | Capture, detection, ROI, storage, scheduling, labeling, forecasting, drift. |
 | `worker/tests/` | Unit tests. No network, no model weights, no GPU. |
 | `web/` | Next.js app deployed to Vercel. |
-| `docs/` | Measurement protocol, privacy policy, operational runbook. |
+| `docs/` | Live state, measurement protocol, privacy policy, operational runbook. |
 
 ## Data model
 
@@ -285,6 +285,13 @@ To deploy, [`docs/deploy.md`](docs/deploy.md) covers the database, the worker
 and the site in the order they have to happen — including the two pieces of
 configuration that are deliberately left unset, without which a correctly
 deployed Hall Check records nothing at all.
+
+**Picking this up after a break, or from a fresh clone?**
+[`docs/STATE.md`](docs/STATE.md) first. The rest of the documentation describes
+how the system is designed; that one describes what is actually true right now
+— which halls are live and why the others are not, which numbers have been
+measured (none), and the handful of things that have already gone wrong and
+will again.
 
 ## Licence
 
