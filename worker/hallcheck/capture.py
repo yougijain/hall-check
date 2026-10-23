@@ -31,6 +31,17 @@ log = logging.getLogger(__name__)
 #: hot path of every capture.
 RESOLVE_TTL_SECONDS = 1800
 
+#: Which stream yt-dlp should hand to ffmpeg. Not "best": that means the best
+#: single stream carrying both video and audio, and YouTube's live cameras
+#: offer none - every HLS rendition is video-only or audio-only - so it fails
+#: with "Requested format is not available" on a stream that is playing fine.
+#: We only want a frame, so ask for video with or without audio (`bv*`), and
+#: cap it at 720p because the detector gains nothing from 1080p and ffmpeg
+#: pulls about half the bytes. `<=?` keeps streams that do not report a height.
+#: No trailing `/b`: when every stream is audio-only yt-dlp lets `b` pick audio,
+#: and failing here names the problem where ffmpeg later would not.
+FORMAT_SELECTOR = "bv*[height<=?720]/bv*"
+
 #: Extensions and schemes ffmpeg can open directly, so yt-dlp is not involved.
 _DIRECT_MEDIA_HINTS = (".m3u8", ".mpd", ".mp4", ".ts", "rtsp://", "rtmp://", "udp://")
 
@@ -68,7 +79,12 @@ def resolve_stream_url(url: str, *, now: float | None = None) -> str:
             f"{url} is not a direct media URL and yt-dlp is not installed to resolve it"
         ) from exc
 
-    options = {"quiet": True, "no_warnings": True, "skip_download": True, "format": "best"}
+    options = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "format": FORMAT_SELECTOR,
+    }
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             info: Any = ydl.extract_info(url, download=False)

@@ -98,6 +98,95 @@ class TestResolveStreamUrl:
         assert len(seen) == 2
 
 
+def _hls(format_id, height=None, *, video=True, audio=False):
+    return {
+        "format_id": format_id,
+        "url": f"https://manifest.example.edu/{format_id}.m3u8",
+        "ext": "mp4",
+        "protocol": "m3u8_native",
+        "vcodec": "avc1" if video else "none",
+        "acodec": "mp4a" if audio else "none",
+        "height": height,
+    }
+
+
+#: What YouTube served for berkshire to a Fly machine on 2026-10-23, from
+#: `yt-dlp --list-formats`: two audio-only renditions and six video-only ones,
+#: nothing carrying both. The old selector, "best", failed on exactly this.
+_YOUTUBE_LIVE = [
+    _hls("233", video=False, audio=True),
+    _hls("234", video=False, audio=True),
+    _hls("269", 144),
+    _hls("229", 240),
+    _hls("230", 360),
+    _hls("231", 480),
+    _hls("232", 720),
+    _hls("270", 1080),
+]
+
+
+class TestFormatSelection:
+    """The selector run through real yt-dlp, with only the network removed.
+
+    The tests above fake YoutubeDL wholesale, so they would pass with any
+    format string at all - which is how "best" shipped. Here the real selection
+    logic sees a real format list, and the only thing stubbed is the page fetch.
+    """
+
+    @pytest.fixture
+    def serve(self, monkeypatch):
+        import yt_dlp
+
+        def _install(formats):
+            info = {
+                "id": "x",
+                "title": "x",
+                "is_live": True,
+                "extractor": "youtube",
+                "extractor_key": "Youtube",
+                "webpage_url": "https://www.youtube.com/watch?v=x",
+                "formats": formats,
+            }
+            monkeypatch.setattr(
+                yt_dlp.YoutubeDL,
+                "extract_info",
+                lambda self, url, download: self.process_ie_result(dict(info), download=download),
+            )
+
+        return _install
+
+    def test_youtube_live_with_no_muxed_stream_resolves_to_720p_video(self, serve):
+        serve(_YOUTUBE_LIVE)
+        resolved = resolve_stream_url("https://www.youtube.com/watch?v=x")
+        assert resolved == "https://manifest.example.edu/232.m3u8"
+
+    def test_muxed_streams_are_still_accepted(self, serve):
+        serve(
+            [
+                _hls("lo", 360, audio=True),
+                _hls("mid", 720, audio=True),
+                _hls("hi", 1080, audio=True),
+            ]
+        )
+        resolved = resolve_stream_url("https://www.youtube.com/watch?v=x")
+        assert resolved == "https://manifest.example.edu/mid.m3u8"
+
+    def test_falls_back_above_720p_rather_than_failing(self, serve):
+        serve([_hls("a", video=False, audio=True), _hls("hi", 1080)])
+        resolved = resolve_stream_url("https://www.youtube.com/watch?v=x")
+        assert resolved == "https://manifest.example.edu/hi.m3u8"
+
+    def test_streams_without_a_reported_height_are_not_excluded(self, serve):
+        serve([_hls("only")])
+        resolved = resolve_stream_url("https://www.youtube.com/watch?v=x")
+        assert resolved == "https://manifest.example.edu/only.m3u8"
+
+    def test_audio_only_is_still_a_capture_error(self, serve):
+        serve([_hls("a", video=False, audio=True)])
+        with pytest.raises(CaptureError, match="could not resolve"):
+            resolve_stream_url("https://www.youtube.com/watch?v=x")
+
+
 class TestCaptureFrame:
     def test_yields_the_decoded_frame(self, stub_grab):
         stub_grab(np.full((4, 4, 3), 200, dtype=np.uint8))
