@@ -37,12 +37,19 @@ COPY pyproject.toml ./
 #
 # Installing torch first means the ultralytics install below resolves its
 # torch requirement against what is already present instead of fetching the
-# PyPI wheel. Pinning the index on both commands would be the belt-and-braces
-# version; it is one index for one package, and the second command needs PyPI
-# for everything else.
+# PyPI wheel. The second command needs PyPI for everything else, so the index
+# cannot simply be pinned on both.
+#
+# torchvision comes from the same index in the same command, and leaving it
+# out is not a size problem but a correctness one. ultralytics depends on it
+# too, and PyPI's torchvision is compiled against PyPI's torch. Paired with the
+# +cpu torch its compiled operators never register, the image builds and loads
+# the model cleanly, and every inference then dies at non-max suppression with
+# "operator torchvision::nms does not exist". That shipped once, on
+# 2026-10-23; publish-worker.yml now runs a real detection to catch it.
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir \
-        torch --index-url https://download.pytorch.org/whl/cpu \
+        torch torchvision --index-url https://download.pytorch.org/whl/cpu \
     && python -m pip install --no-cache-dir .
 
 COPY hallcheck ./hallcheck
