@@ -104,6 +104,48 @@ jobs:
           echo "$out" | grep -q CPU-BUILD-CONFIRMED \
             || { echo "the torch check did not execute - stdin not attached?"; exit 1; }
 
+      - name: A real detection runs end to end, offline
+        # Loading the model is not running it. An image whose torchvision was
+        # built against a different torch loaded weights fine, passed every
+        # step above, and then failed every inference at non-max suppression
+        # ("operator torchvision::nms does not exist") - first discovered by a
+        # live `hallcheck once` with four cameras.
+        #
+        # The frame has to contain people. NMS only runs on candidate boxes,
+        # so a blank frame skips it and passes on exactly that broken image.
+        # bus.jpg ships inside the ultralytics package, so this needs no
+        # network and no frame from any real camera. It goes through the
+        # worker's own detector and ROI code, not a bare YOLO call.
+        #
+        # Same stdin and sentinel pattern as the torch check above, for the
+        # same reason: without -i the script never runs and exits 0.
+        run: |
+          set +e
+          out=$(docker run --rm -i --network none ${{ env.IMAGE }}:smoke python - <<'PY'
+          import cv2
+          from ultralytics.utils import ASSETS
+
+          from hallcheck.detect import YoloPersonDetector
+          from hallcheck.roi import Roi
+
+          frame = cv2.imread(str(ASSETS / "bus.jpg"))
+          assert frame is not None, "bus.jpg is missing from the ultralytics package"
+
+          detector = YoloPersonDetector()
+          detector.load()
+          whole_frame = Roi(version="smoke", vertices=((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)))
+          count = detector.count_in_roi(frame, whole_frame)
+          assert count >= 1, f"no people found in bus.jpg (count={count})"
+          print(f"INFERENCE-CONFIRMED {count} people in bus.jpg")
+          PY
+          )
+          code=$?
+          set -e
+          echo "$out"
+          test "$code" -eq 0 || { echo "inference failed"; exit 1; }
+          echo "$out" | grep -q INFERENCE-CONFIRMED \
+            || { echo "the inference check did not execute - stdin not attached?"; exit 1; }
+
       - name: No CUDA runtime packages are installed
         # The assertion above reads torch's own metadata. This one reads the
         # environment, so a wheel that reports itself as CPU while still
