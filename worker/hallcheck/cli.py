@@ -125,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     detector = YoloPersonDetector(
         model=settings.model,
         conf_threshold=settings.conf_threshold,
+        imgsz=settings.imgsz,
     )
     store = SupabaseStore(settings.supabase_url, settings.supabase_service_key)
 

@@ -100,9 +100,9 @@ first real incident, and record the change here.
   before it can say anything, so a camera that moves while the worker is down
   starts its new baseline immediately and the step change is never seen.
 - **Detector changes dressed as camera changes.** Switching model or confidence
-  threshold shifts every count at once and looks exactly like drift. Change one
-  thing at a time, and remember that `model_version` records the threshold for
-  this reason.
+  threshold or input size shifts every count at once and looks exactly like
+  drift. Change one thing at a time, and remember that `model_version` records
+  the threshold and the input size for this reason.
 
 ### Incident log
 
@@ -171,5 +171,5 @@ and after are on different scales and the site is showing the new one against
 an older mental model. That is working as intended.
 
 If the polygon is unchanged, the next question is whether `model_version`
-changed — it includes the confidence threshold, because the same weights at a
-different cutoff produce a different series.
+changed — it includes the confidence threshold and the input size, because the
+same weights at a different cutoff or resolution produce a different series.

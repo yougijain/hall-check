@@ -94,6 +94,7 @@ with commentary.
 | `SUPABASE_SERVICE_KEY` | — | Required. Service role, not anon — the worker writes |
 | `HALLCHECK_MODEL` | `yolo11n.pt` | Move to `yolo11s.pt` only if M2 error numbers justify it |
 | `HALLCHECK_CONF_THRESHOLD` | `0.35` | Stamped onto every count; changing it starts a new series |
+| `HALLCHECK_IMGSZ` | `1280` | Inference input size, multiple of 32. Also stamped into `model_version` |
 | `HALLCHECK_INTERVAL_SECONDS` | `120` | Capture cadence |
 | `HALLCHECK_CAPTURE_TIMEOUT` | `30` | Must be shorter than the interval, or a dead camera starves the halls behind it |
 | `HALLCHECK_STREAM_<HALL_ID>` | — | Override a hall's stream URL without touching the database |
