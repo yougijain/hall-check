@@ -39,6 +39,8 @@ services:
         value: yolo11n.pt
       - key: HALLCHECK_CONF_THRESHOLD
         value: "0.35"
+      - key: HALLCHECK_IMGSZ
+        value: "1280"
       - key: HALLCHECK_INTERVAL_SECONDS
         value: "120"
       - key: HALLCHECK_CAPTURE_TIMEOUT

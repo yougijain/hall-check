@@ -49,16 +49,19 @@ class YoloPersonDetector:
         self,
         model: str = "yolo11n.pt",
         conf_threshold: float = 0.35,
+        imgsz: int = 1280,
         device: str = "cpu",
     ) -> None:
         self._model_name = model
         self._conf_threshold = conf_threshold
+        self._imgsz = imgsz
         self._device = device
         self._model: Any | None = None
 
     @property
     def model_version(self) -> str:
-        return f"{self._model_name}@conf{self._conf_threshold:g}"
+        """Must match Settings.model_version; see there for why imgsz is in it."""
+        return f"{self._model_name}@conf{self._conf_threshold:g}@imgsz{self._imgsz}"
 
     def load(self) -> None:
         """Load weights.
@@ -97,6 +100,7 @@ class YoloPersonDetector:
                 frame,
                 classes=[PERSON_CLASS],
                 conf=self._conf_threshold,
+                imgsz=self._imgsz,
                 device=self._device,
                 verbose=False,
                 save=False,

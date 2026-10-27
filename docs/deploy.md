@@ -212,6 +212,7 @@ record of intent, not because the worker requires it.
 | `SUPABASE_SERVICE_KEY` | **service_role** key |
 | `HALLCHECK_MODEL` | `yolo11n.pt` |
 | `HALLCHECK_CONF_THRESHOLD` | `0.35` |
+| `HALLCHECK_IMGSZ` | `1280` |
 | `HALLCHECK_INTERVAL_SECONDS` | `120` |
 | `HALLCHECK_CAPTURE_TIMEOUT` | `30` |
 

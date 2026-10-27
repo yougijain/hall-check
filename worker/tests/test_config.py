@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from hallcheck.config import ConfigError, Settings, load_settings
+from hallcheck.detect import YoloPersonDetector
 
 BASE_ENV = {
     "SUPABASE_URL": "https://test.supabase.co",
@@ -15,14 +16,21 @@ class TestLoadSettings:
         settings = load_settings(BASE_ENV)
         assert settings.model == "yolo11n.pt"
         assert settings.conf_threshold == 0.35
+        assert settings.imgsz == 1280
         assert settings.interval_seconds == 120
 
     def test_environment_overrides_defaults(self):
         settings = load_settings(
-            {**BASE_ENV, "HALLCHECK_MODEL": "yolo11s.pt", "HALLCHECK_CONF_THRESHOLD": "0.5"}
+            {
+                **BASE_ENV,
+                "HALLCHECK_MODEL": "yolo11s.pt",
+                "HALLCHECK_CONF_THRESHOLD": "0.5",
+                "HALLCHECK_IMGSZ": "640",
+            }
         )
         assert settings.model == "yolo11s.pt"
         assert settings.conf_threshold == 0.5
+        assert settings.imgsz == 640
 
     def test_every_missing_required_variable_is_reported_at_once(self):
         with pytest.raises(ConfigError) as caught:
@@ -70,6 +78,13 @@ class TestValidation:
         with pytest.raises(ConfigError, match="strictly between 0 and 1"):
             Settings(supabase_url="u", supabase_service_key="k", conf_threshold=threshold)
 
+    @pytest.mark.parametrize("imgsz", [0, -640, 16, 1000, 1281])
+    def test_input_size_must_be_a_positive_multiple_of_32(self, imgsz):
+        # Ultralytics would silently round these, and the size stamped into
+        # model_version would no longer be the size that actually ran.
+        with pytest.raises(ConfigError, match="multiple of 32"):
+            Settings(supabase_url="u", supabase_service_key="k", imgsz=imgsz)
+
     def test_capture_timeout_must_fit_inside_the_interval(self):
         # A 120s timeout on a 120s interval means one dead camera consumes the
         # entire tick and the halls behind it are never reached.
@@ -83,9 +98,26 @@ class TestValidation:
 
 
 class TestModelVersion:
-    def test_includes_the_threshold(self):
+    def test_includes_the_threshold_and_input_size(self):
         settings = Settings(supabase_url="u", supabase_service_key="k", conf_threshold=0.4)
-        assert settings.model_version == "yolo11n.pt@conf0.4"
+        assert settings.model_version == "yolo11n.pt@conf0.4@imgsz1280"
+
+    def test_a_different_input_size_is_a_different_series(self):
+        at_640 = Settings(supabase_url="u", supabase_service_key="k", imgsz=640)
+        at_1280 = Settings(supabase_url="u", supabase_service_key="k", imgsz=1280)
+        assert at_640.model_version != at_1280.model_version
+
+    def test_matches_what_the_detector_stamps(self):
+        # Two properties build this string, one on Settings and one on the
+        # detector. Counts carry the detector's; the startup log and anything
+        # reading Settings carry the other. They must not drift apart.
+        settings = Settings(
+            supabase_url="u", supabase_service_key="k", conf_threshold=0.3, imgsz=960
+        )
+        detector = YoloPersonDetector(
+            model=settings.model, conf_threshold=settings.conf_threshold, imgsz=settings.imgsz
+        )
+        assert detector.model_version == settings.model_version
 
     def test_service_key_is_kept_out_of_the_repr(self):
         settings = Settings(supabase_url="u", supabase_service_key="super-secret")
