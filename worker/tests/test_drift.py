@@ -272,6 +272,68 @@ class TestCameraEpoch:
         assert signal.camera_epoch == 1
 
 
+def _switched(*, roi_version: str, model_version: str, factor: float) -> list[Reading]:
+    """Twenty days of one series, then the last 24 hours on another.
+
+    The last day's counts are scaled by `factor`, the way a detector or region
+    change moves every count at once without the room changing at all.
+    """
+    old = [
+        Reading(r.hall_id, r.ts, r.count, 1, "v0-geometry-prior", "yolo11n.pt@conf0.35")
+        for r in readings(days_back=20, counts=steady(1.0))
+        if r.ts < NOW - timedelta(hours=24)
+    ]
+    new = [
+        Reading(r.hall_id, r.ts, round(r.count * factor), 1, roi_version, model_version)
+        for r in readings(days_back=20, counts=steady(1.0))
+        if r.ts >= NOW - timedelta(hours=24)
+    ]
+    return old + new
+
+
+class TestConfigurationChanges:
+    """A change we made ourselves is history, not drift - same as a camera move.
+
+    This is the switch of 2026-10-28: detector input 640 -> 1280 and three ROIs
+    redrawn, all at once, with camera_epoch untouched because no camera moved.
+    Comparing across it would have alerted on every camera it touched.
+    """
+
+    def test_the_same_step_with_no_recorded_change_does_alert(self):
+        # The control. Without this, the tests below would pass on a drift
+        # check that never alerts at all.
+        steps = _switched(
+            roi_version="v0-geometry-prior", model_version="yolo11n.pt@conf0.35", factor=3.0
+        )
+        assert check_hall(steps, now=NOW).status is DriftStatus.ALERT
+
+    def test_a_detector_change_restarts_the_baseline_instead_of_alerting(self):
+        switched = _switched(
+            roi_version="v0-geometry-prior",
+            model_version="yolo11n.pt@conf0.35@imgsz1280",
+            factor=3.0,
+        )
+        signal = check_hall(switched, now=NOW)
+
+        assert signal.status is DriftStatus.INSUFFICIENT_DATA
+        assert "imgsz1280" in signal.reason
+
+    def test_an_roi_redraw_restarts_the_baseline_instead_of_alerting(self):
+        switched = _switched(roi_version="v1", model_version="yolo11n.pt@conf0.35", factor=0.3)
+        signal = check_hall(switched, now=NOW)
+
+        assert signal.status is DriftStatus.INSUFFICIENT_DATA
+        assert "roi v1" in signal.reason
+
+    def test_once_the_new_series_has_history_it_is_checked_on_its_own(self):
+        # Twenty days entirely in the new series: an ordinary, stable camera.
+        current = [
+            Reading(r.hall_id, r.ts, r.count, 1, "v1", "yolo11n.pt@conf0.35@imgsz1280")
+            for r in readings(days_back=20, counts=steady(1.0))
+        ]
+        assert check_hall(current, now=NOW).status is DriftStatus.OK
+
+
 class TestWindows:
     def test_the_recent_window_is_not_part_of_its_own_baseline(self):
         """Otherwise a real shift is diluted by the very readings that show it."""

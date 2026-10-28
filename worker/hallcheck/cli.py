@@ -232,16 +232,7 @@ def _drift(store) -> int:
     now = datetime.now(tz=UTC)
     lookback = timedelta(days=BASELINE_WINDOW_DAYS) + timedelta(hours=RECENT_WINDOW_HOURS)
 
-    readings = [
-        Reading(
-            hall_id=row["hall_id"],
-            ts=datetime.fromisoformat(row["ts"]),
-            count=int(row["count"]),
-            camera_epoch=int(row.get("camera_epoch") or 1),
-            roi_version=str(row.get("roi_version") or "v1"),
-        )
-        for row in store.counts_since(now - lookback)
-    ]
+    readings = [Reading.from_row(row) for row in store.counts_since(now - lookback)]
 
     signals = check_all(readings, now=now)
     print(render_report(signals))
@@ -257,16 +248,7 @@ def _forecast(args, store) -> int:
     halls = store.active_halls()
     hours = {hall.hall_id: (hall.opens_at, hall.closes_at) for hall in halls}
 
-    readings = [
-        Reading(
-            hall_id=row["hall_id"],
-            ts=datetime.fromisoformat(row["ts"]),
-            count=int(row["count"]),
-            camera_epoch=int(row.get("camera_epoch") or 1),
-            roi_version=str(row.get("roi_version") or "v1"),
-        )
-        for row in store.counts_since(since)
-    ]
+    readings = [Reading.from_row(row) for row in store.counts_since(since)]
 
     samples = build_samples(readings, horizon_minutes=args.horizon, hours=hours)
     log.info("built %d samples from %d readings", len(samples), len(readings))

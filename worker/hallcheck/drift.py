@@ -35,9 +35,12 @@ is noise with the same relative magnitude. Both thresholds must be exceeded.
 hours carry no information about where the camera is pointing and would
 otherwise dominate the comparison.
 
-**One epoch only.** Readings from before a recorded camera move are not
-comparable to readings after it. A move we already know about is not drift, it
-is history, and the baseline restarts from it.
+**One series only.** Readings from before a recorded camera move are not
+comparable to readings after it, and neither are readings either side of a
+redrawn ROI or a detector change - a new model, threshold or input size. A
+change we already know about is not drift, it is history, and the baseline
+restarts from it. The series is `Reading.scale`, the same key the forecast
+uses, so the two cannot disagree about what is comparable.
 """
 
 from __future__ import annotations
@@ -217,17 +220,21 @@ def check_hall(
 
     hall_id = readings[0].hall_id
 
-    # Only the current epoch. A recorded camera move is not drift, and its
-    # baseline starts over from the move.
-    epoch = max(r.camera_epoch for r in readings)
-    in_epoch = [r for r in readings if r.camera_epoch == epoch]
+    # Only the current series - the latest reading's camera epoch, ROI version
+    # and detector. A recorded move, a redrawn region or a new detector setting
+    # is not drift, and the baseline starts over from it. Comparing across one
+    # is how the 640-to-1280 switch on 2026-10-28 would have alerted on every
+    # camera it touched.
+    current = max(readings, key=lambda r: r.ts).scale
+    epoch, roi_version, model_version = current
+    in_series = [r for r in readings if r.scale == current]
 
     recent_start = now - timedelta(hours=recent_hours)
     baseline_start = recent_start - timedelta(days=baseline_days)
 
-    recent = [r for r in in_epoch if recent_start <= r.ts <= now]
+    recent = [r for r in in_series if recent_start <= r.ts <= now]
     # Half-open, so the last 24 hours are never also part of their own baseline.
-    baseline = [r for r in in_epoch if baseline_start <= r.ts < recent_start]
+    baseline = [r for r in in_series if baseline_start <= r.ts < recent_start]
 
     if not recent:
         return DriftSignal(
@@ -238,7 +245,10 @@ def check_hall(
             hall_id,
             epoch,
             DriftStatus.INSUFFICIENT_DATA,
-            reason=f"no baseline history in epoch {epoch}",
+            reason=(
+                f"no baseline history in the current series "
+                f"(epoch {epoch}, roi {roi_version}, model {model_version or 'unknown'})"
+            ),
         )
 
     recent_medians = _medians_by_slot(recent, slot_minutes, min_readings_per_slot)

@@ -152,6 +152,46 @@ class TestCameraEpochGuard:
         for sample in samples:
             assert sample.features["lag_0m"] == sample.target
 
+    def test_a_detector_change_breaks_the_series_too(self):
+        # Same camera, same region, new input size: the switch of 2026-10-28,
+        # which left Hampshire South on v0 with its counts on a new scale.
+        old = [
+            Reading("worcester", START + timedelta(minutes=m), 10, 1, "v0", "m@conf0.35")
+            for m in range(0, 61, 10)
+        ]
+        new = [
+            Reading("worcester", START + timedelta(minutes=m), 30, 1, "v0", "m@conf0.35@imgsz1280")
+            for m in range(70, 181, 10)
+        ]
+        samples = build_samples(old + new, horizon_minutes=30, lags=(0,))
+
+        assert samples, "the samples inside each series should survive"
+        for sample in samples:
+            assert sample.features["lag_0m"] == sample.target
+
+
+class TestFromRow:
+    def test_carries_every_column_that_gates_comparability(self):
+        reading = Reading.from_row(
+            {
+                "hall_id": "worcester_south",
+                "ts": "2026-10-28T01:14:00+00:00",
+                "count": 2,
+                "camera_epoch": 1,
+                "roi_version": "v1",
+                "model_version": "yolo11n.pt@conf0.35@imgsz1280",
+            }
+        )
+        assert reading.scale == (1, "v1", "yolo11n.pt@conf0.35@imgsz1280")
+        assert reading.count == 2
+        assert reading.ts.tzinfo is not None
+
+    def test_rows_differing_only_in_detector_are_not_comparable(self):
+        row = {"hall_id": "h", "ts": "2026-10-28T01:12:00+00:00", "count": 4, "roi_version": "v0"}
+        at_640 = Reading.from_row({**row, "model_version": "yolo11n.pt@conf0.35"})
+        at_1280 = Reading.from_row({**row, "model_version": "yolo11n.pt@conf0.35@imgsz1280"})
+        assert at_640.scale != at_1280.scale
+
 
 class TestBaselines:
     def _with_history(self) -> list[Reading]:
@@ -201,6 +241,21 @@ class TestBaselines:
         ]
         recent = [
             Reading("worcester", START + timedelta(minutes=m), 40, 2) for m in range(0, 121, 10)
+        ]
+        samples = build_samples(history + recent, horizon_minutes=30, lags=(0,))
+
+        current = [s for s in samples if s.origin >= START]
+        assert current
+        assert all(s.baselines["same_slot_last_week"] is None for s in current)
+
+    def test_a_baseline_does_not_cross_a_detector_change(self):
+        history = [
+            Reading("w", START - timedelta(days=7) + timedelta(minutes=m), 5, 1, "v1", "m@640")
+            for m in range(0, 121, 10)
+        ]
+        recent = [
+            Reading("w", START + timedelta(minutes=m), 15, 1, "v1", "m@1280")
+            for m in range(0, 121, 10)
         ]
         samples = build_samples(history + recent, horizon_minutes=30, lags=(0,))
 

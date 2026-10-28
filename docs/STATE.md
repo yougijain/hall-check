@@ -292,15 +292,21 @@ what 640 did, and that is still a fraction of the people visible in a busy
 frame. How large a fraction, and whether it is stable enough to be useful, is
 exactly what the labels will measure.
 
-**Drift and forecast do not fully separate series.** `drift.check_hall` keeps
-only the latest `camera_epoch` and ignores `roi_version` and `model_version`,
-so about a day after 2026-10-28 01:14 UTC, the last 24 hours (v1, 1280 px) will
-be compared against a baseline that is v0 at 640 px, and every switched camera
-will read as drifting. `features.Reading.scale` is `(camera_epoch,
-roi_version)` without `model_version`, so Hampshire South's 640 and 1280 rows -
-both v0 - look like one series to the forecast. Neither check is scheduled yet,
-so nothing is wrong today. Fix both before scheduling drift. Bumping
-`camera_epoch` instead would be wrong: it means the camera physically moved.
+**The drift check already runs, inside the worker, and tells nobody.** The
+scheduler has a daily job at 08:00 UTC (04:00 local) that writes its report to
+the container log; nothing pages. On a laptop asleep at 04:00 it seldom fires:
+by 2026-10-28 it had never produced a report. Read it with
+`docker logs hallcheck-worker | grep -i drift`.
+
+**Drift and forecast compare within a series.** A series is `Reading.scale`:
+camera epoch, ROI version and detector (`model_version`, which carries the
+weights, threshold and input size). Until 2026-10-28 drift separated by epoch
+only and the forecast by epoch and ROI version, so the 640-to-1280 and v1
+switch would have read as every touched camera drifting, and Hampshire South's
+two detector series - both v0 - as one. A configuration change now restarts
+the baseline instead. The running worker gets this only once recreated on an
+image built after the fix. Bumping `camera_epoch` to force a restart would be
+wrong: it means the camera physically moved.
 
 **Vercel previews every PR.** Linking the project means `vercel[bot]` comments
 a preview URL on every pull request. Harmless, occasionally noisy.
@@ -329,7 +335,7 @@ per camera, 640 found 7, 5, 0 and 4 people where 1280 found 21, 2, 6 and 15.
 |---|---|
 | Accuracy (MAE, bias) | No labels. `hallcheck evaluate` exits non-zero until coverage is met: 10+ per meal, 10+ per lighting, 10+ per hall, 150+ total - marginals, not the full cross. Labels can start now, against v1. |
 | Forecast | The usable series starts at the switch, 2026-10-28. About two weeks before a time split means anything: around 2026-11-11, later by whatever the laptop sleeps through. |
-| Drift | No baseline. Needs about 15 days of the new series, so around 2026-11-12 at the earliest - and the series fix under "Known gotchas" first. The incident log in the runbook is empty because the check has never run, which is no evidence the thresholds are right. |
+| Drift | No baseline in the current series. It compares the last day against up to 14 days before it, so 2026-10-30 is the earliest it could say anything and 2026-11-12 the first full baseline - but possibly never at its current thresholds: it only compares time slots whose baseline median is at least 4 people and needs 6 of them, and the v1 regions mostly count 0-4. `MIN_BASELINE_MEDIAN` was chosen for whole-room counts and needs revisiting against v1. Runs daily inside the worker, report in the container log only. The incident log in the runbook is empty because the check has never produced a report, which is no evidence the thresholds are right. |
 
 ## The order that matters
 
@@ -347,8 +353,8 @@ Also open:
   plugged in and awake is the only state in which it collects.
 - **Hampshire South.** Clean or fix the camera, or deactivate the hall rather
   than publish a number that is mostly haze.
-- **Drift and forecast series.** Separate by `roi_version` and
-  `model_version` before scheduling drift.
+- **Drift reaches nobody.** Its report goes to the container log. Whatever
+  schedules `hallcheck health` (step 4) should carry drift's result too.
 - **The Fly app.** Destroy it if it is not coming back; it holds a copy of the
   service key.
 

@@ -9,11 +9,13 @@ and before, and nothing else. The target is the count at `t + 30 minutes`,
 which is exactly the thing that will not be known when the prediction is
 actually needed.
 
-**No sample may span a camera epoch or an ROI version change.** Counts either
-side of a camera move are measurements of different things on different scales.
-A lag feature from before a move, paired with a target from after it, teaches
-the model a step change that is an artefact of the hardware rather than
-anything about the dining hall.
+**No sample may span a camera epoch, an ROI version or a detector change.**
+Counts either side of a camera move are measurements of different things on
+different scales, and so are counts either side of a redrawn region or a new
+model, threshold or input size. A lag feature from before the change, paired
+with a target from after it, teaches the model a step change that is an
+artefact of the hardware or the configuration rather than anything about the
+dining hall.
 
 **Samples are built from an exact timestamp index, not a nearest-neighbour
 search.** The worker snaps captures to the interval grid, so `t - 7 days` is a
@@ -23,9 +25,10 @@ a mid-afternoon one when a capture is missing.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from typing import Any
 
 #: How far ahead the forecast predicts. Long enough to be worth acting on -
 #: the walk across campus - and short enough that the current count still
@@ -42,18 +45,42 @@ DAY = timedelta(days=1)
 
 @dataclass(frozen=True, slots=True)
 class Reading:
-    """One row of `counts`, with the two columns that gate comparability."""
+    """One row of `counts`, with the three columns that gate comparability."""
 
     hall_id: str
     ts: datetime
     count: int
     camera_epoch: int = 1
     roi_version: str = "v1"
+    model_version: str = ""
 
     @property
-    def scale(self) -> tuple[int, str]:
-        """What makes two readings comparable. Differ here and they are not."""
-        return (self.camera_epoch, self.roi_version)
+    def scale(self) -> tuple[int, str, str]:
+        """What makes two readings comparable. Differ here and they are not.
+
+        `model_version` carries the weights, the confidence threshold and the
+        input size. On 2026-10-28 the input size went from 640 to 1280 and the
+        same camera's counts roughly tripled; a series that ignored that would
+        read it as the hall getting busier.
+        """
+        return (self.camera_epoch, self.roi_version, self.model_version)
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> Reading:
+        """Build from a `counts` row.
+
+        One constructor for every caller. The drift job, the drift command and
+        the forecast command each used to build readings by hand, and all three
+        left `model_version` out the same way.
+        """
+        return cls(
+            hall_id=row["hall_id"],
+            ts=datetime.fromisoformat(row["ts"]),
+            count=int(row["count"]),
+            camera_epoch=int(row.get("camera_epoch") or 1),
+            roi_version=str(row.get("roi_version") or "v1"),
+            model_version=str(row.get("model_version") or ""),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,7 +195,7 @@ def build_samples(
     """Every supervised example the history supports.
 
     A sample is emitted only when the target, every lag, and the origin all
-    exist and all share one camera epoch and ROI version. Anything else is
+    exist and all share one `scale`: camera epoch, ROI version and detector. Anything else is
     dropped rather than imputed: a gap in the counts means the camera was not
     looked at, and inventing a value there would train the model on fiction.
     """
@@ -219,10 +246,10 @@ def _baselines_for(
     at 12:00 last Tuesday" would be answering a different question and would
     make the baseline look worse than it is.
 
-    A lookup that lands on a different camera epoch returns None. Comparing a
-    count from before a camera move against one from after it is exactly the
-    mistake `camera_epoch` exists to prevent, and letting a baseline do it
-    would flatter the model.
+    A lookup that lands on a different `scale` - another camera epoch, ROI
+    version or detector - returns None. Comparing a count from before such a
+    change against one from after it is exactly the mistake those columns
+    exist to prevent, and letting a baseline do it would flatter the model.
     """
     results: dict[str, float | None] = {}
     for name, offset in (("same_slot_last_week", WEEK), ("same_slot_yesterday", DAY)):
