@@ -5,7 +5,7 @@ rest of the documentation cannot tell them.
 
 Everything else in `docs/` describes how the system is *designed*. This file
 describes what is *true right now*, which is a different thing and goes stale
-faster. **Last verified: 2026-10-26.**
+faster. **Last verified: 2026-10-28.**
 
 Check it against reality before trusting it:
 
@@ -26,8 +26,10 @@ wsl -d Ubuntu -u root -- docker ps --filter name=hallcheck-worker
 
 The worker has been collecting since **2026-10-26 22:36 UTC**, on a laptop
 rather than a server, because YouTube refuses to serve the camera streams to
-datacenter IPs. Every count so far is under the guessed ROI, so `counts` proves
-the pipeline works end to end; it does not yet measure a queue.
+datacenter IPs. Since **2026-10-28 01:14 UTC** three of the four cameras count
+inside regions drawn against real frames (`v1`), with the detector at 1280 px.
+Hampshire South's image is too hazy to measure and stays on the guess. Nothing
+is labelled yet, so how wrong the v1 counts are is not known.
 
 ---
 
@@ -37,8 +39,8 @@ the pipeline works end to end; it does not yet measure a queue.
 |---|---|---|
 | Database | Supabase `buptvnkguezcjgyqtiqf`, us-east-2, PG 17.6 | Migrations 0001-0007 applied. Access model verified as `anon`. Rows arriving every two minutes. |
 | Site | https://hall-check.vercel.app | Deployed, env vars set. Reads whatever `counts` holds. |
-| Worker image | `ghcr.io/yougijain/hall-check/worker:latest` | `sha256:104902d0…`, revision `45b4d1e`, published 2026-10-26. The first image that can actually count: see "What it took". |
-| Worker | A Windows 11 laptop, Docker Engine inside WSL Ubuntu | **Running.** Capture loop every 120 s, four halls. |
+| Worker image | `ghcr.io/yougijain/hall-check/worker:latest` | `sha256:d5a08b2a…`, revision `e535c06`, published 2026-10-27. Inference at 1280 px. |
+| Worker | A Windows 11 laptop, Docker Engine inside WSL Ubuntu | **Running** that image since 2026-10-28 01:13 UTC. Capture loop every 120 s, four halls. Collects only while the laptop is awake: see "What interrupts it". |
 | Fly app `hallcheck-worker` | Fly.io, `iad`, personal org | Exists, machine **stopped**. Blocked by YouTube; see "Why not Fly". Holds a copy of the service key as a secret. |
 
 Supabase URL: `https://buptvnkguezcjgyqtiqf.supabase.co`
@@ -105,8 +107,15 @@ in `counts`. This already happened within the first half hour: Windows entered
 Modern Standby from 23:01:22 to 23:03:50 UTC on 2026-10-26, cut networking
 while in it ("Connectivity state in standby: Disconnected, Reason: Policy
 Setting"), and the 23:02 slot is empty. The worker logged nothing about it; the
-tick simply never fired. Set the laptop never to sleep while plugged in if the
-history matters more than the battery, and look for gaps with:
+tick simply never fired.
+
+It is the dominant failure, not an edge case. By 03:26 UTC on 2026-10-28, 416
+of the 866 two-minute slots since the worker started were filled - under half.
+The big holes are the laptop asleep: 00:30-02:50 and 04:16-16:06 UTC on
+2026-10-27, the second of which also made a scheduled noon frame capture miss
+by six minutes. This laptop's power plan sleeps after 3 minutes idle on
+battery and never on mains, so plugged in on a desk is the only state in which
+it collects reliably. Look for gaps with:
 
 ```sql
 select g from generate_series((select min(ts) from public.counts),
@@ -195,7 +204,7 @@ undeletable.
 | Hall | Active | Video id | Note |
 |---|---|---|---|
 | `berkshire` | yes | `AoceCqa6MWw` | |
-| `hampshire_south` | yes | `RprORF_ggOA` | |
+| `hampshire_south` | yes | `RprORF_ggOA` | Image hazy enough that detection barely works; still on the v0 region. See below. |
 | `worcester_north` | yes | `7wHgOpwHz8k` | |
 | `worcester_south` | yes | `89KPOnjHEC4` | |
 | `hampshire_north` | **no** | `TWC87AgKJHA` | Stream stopped playing, found 2026-10-23. Deactivated rather than deleted. |
@@ -211,35 +220,45 @@ remembers. To bring the hall back: find the current stream on
 umassdining.com/livestream, `update public.halls set stream_url = ...,
 active = true where hall_id = 'hampshire_north'`.
 
-## The ROI polygons are a guess
+## The ROI polygons
 
-Every hall carries this, stamped `roi_version = 'v0-geometry-prior'`:
+Three cameras carry `roi_version = 'v1'`, drawn on 2026-10-27 against 24 frames
+of the dinner rush - six rounds, six minutes apart, 17:30-18:01 local - by
+plotting every foot-point the 1280 px detector found and drawing around where
+people stood still. Coordinates are fractions of the frame; a person is inside
+if the bottom-centre of their box, their feet, is.
 
-```
-[[0.30, 0.35], [0.70, 0.35], [0.95, 1.00], [0.05, 1.00]]
-```
+| Hall | Version | Polygon | Frame | What it covers |
+|---|---|---|---|---|
+| `berkshire` | v1 | `[[0.79,0.02],[1.00,0.02],[1.00,0.16],[0.905,0.27],[0.855,0.40],[0.82,0.30]]` | 5.0% | The lane behind the stanchion belt on the right, up toward the serving shelves. The first single frame suggested the open floor on the other side of the belt; over thirty minutes that turned out to be a walkway. |
+| `worcester_north` | v1 | `[[0.74,0.26],[0.83,0.26],[0.83,0.40],[0.93,0.44],[0.93,0.52],[0.79,0.52]]` | 2.7% | The floor in front of the bright serving counter on the right, short of the tables. People there are only detected at 1280 px. |
+| `worcester_south` | v1 | `[[0.12,0.50],[0.50,0.33],[0.56,0.34],[0.56,0.43],[0.42,0.50],[0.17,0.56]]` | 4.6% | The walkway along the GREENS self-serve counter. There is no managed line here; this counts people standing at the counter. Stops above the first tables. |
+| `hampshire_south` | v0-geometry-prior | `[[0.30,0.35],[0.70,0.35],[0.95,1.00],[0.05,1.00]]` | 42% | Unchanged. The image is hazy - a dirty or fogged cover - and the detector finds 1-2 people in a room of dozens at either input size. No polygon fixes that; the camera needs attention, or the hall deactivating. |
 
-**Nobody has ever seen these frames.** It is a trapezoid derived from how a
-dining hall camera is typically mounted - narrower at the top because a camera
-angled down sees a fixed-width corridor as narrow far away, reaching the bottom
-edge because the near field is where the counter is, stopping at `y = 0.35`
-because above that the detector is unreliable and the band is mostly people
-walking through. It covers 0.42 of the frame, deliberately wide: an ROI that is
-too large inflates the count but keeps it monotone in occupancy, while one that
-is too tight returns zeros that read as a quiet hall.
+**What v0 was.** A trapezoid over the bottom of the frame, chosen sight unseen
+on the assumption that the counter is in the near field. On all four cameras
+the near field is dining tables, so v0 mostly counted people eating: over the
+same dinner frames, Worcester South had 9-14 people per frame inside v0 and
+0-4 inside v1. The v0 counts are pipeline output, not queue measurements.
 
-The `v0-` prefix means *not drawn against a frame*. Counts produced under it
-demonstrate the pipeline works; they are not measurements of a queue. Every
-row in `counts` as of this writing carries it.
+**Known weak spots in v1.**
+- Worcester South's lower edge sits at the counter base so the nearest diners
+  stay out. Someone standing back from the counter is missed, and staff behind
+  it whose feet are hidden can be counted.
+- Berkshire's queue side of the belt is read from where people stood still
+  across six frames, not from knowing the room.
+- All of it rests on one dinner. If lunch lines form elsewhere, that is a v2.
 
-Every hall has the identical polygon on purpose. There is no evidence on which
-to make them differ, and numbers that varied per hall would read as though
-someone had drawn them.
+**Rollback.** Set the three rows back to the v0 polygon above with
+`roi_version = 'v0-geometry-prior'`, and recreate the worker on image
+`sha256:104902d0…`. Counts already written keep the stamps they were written
+with.
 
-**Draw the real regions before collecting labels.** Labels carry a
-`roi_version`. Collect against the prior, then redraw, and every label is void
-because it measured a different region. This is the sequencing mistake that
-costs a week.
+Every frame used to draw these was deleted after review; none is in the repo.
+
+**Labels can now be collected, against v1.** A label carries the
+`roi_version` it was taken under, so redrawing a region later voids the labels
+for that hall - which is the reason this came first.
 
 ## Known gotchas
 
@@ -263,36 +282,75 @@ presentation - the site uses them to say "Closed" instead of a number. So a
 healthy hall produces readings at 3am, and six hours of silence means broken
 rather than shut. `hallcheck health` relies on this.
 
-**Memory, measured.** 376-447 MiB resident across two readings on 2026-10-26,
-with the model loaded and after real inferences, out of 7.5 GiB visible to WSL. The earlier estimate of
-~700 MB was conservative. The 1 GB Fly sizing would have fit; the ONNX Runtime
-fallback is not needed.
+**Memory, measured.** 376-447 MiB resident at 640 px on 2026-10-26, and
+473-497 MiB at 1280 px on 2026-10-28, with the model loaded and after real inferences,
+out of 7.5 GiB visible to WSL. The earlier estimate of ~700 MB was
+conservative. 1 GB is enough; the ONNX Runtime fallback is not needed.
+
+**The detector still misses most people.** 1280 px finds roughly three times
+what 640 did, and that is still a fraction of the people visible in a busy
+frame. How large a fraction, and whether it is stable enough to be useful, is
+exactly what the labels will measure.
+
+**Drift and forecast do not fully separate series.** `drift.check_hall` keeps
+only the latest `camera_epoch` and ignores `roi_version` and `model_version`,
+so about a day after 2026-10-28 01:14 UTC, the last 24 hours (v1, 1280 px) will
+be compared against a baseline that is v0 at 640 px, and every switched camera
+will read as drifting. `features.Reading.scale` is `(camera_epoch,
+roi_version)` without `model_version`, so Hampshire South's 640 and 1280 rows -
+both v0 - look like one series to the forecast. Neither check is scheduled yet,
+so nothing is wrong today. Fix both before scheduling drift. Bumping
+`camera_epoch` instead would be wrong: it means the camera physically moved.
 
 **Vercel previews every PR.** Linking the project means `vercel[bot]` comments
 a preview URL on every pull request. Harmless, occasionally noisy.
 
 ## What is measured
 
-Counts, from 2026-10-26 22:36 UTC, every two minutes, four halls, all under
-`v0-geometry-prior`. Nothing derived from them yet.
+Counts, every two minutes, four halls, in three series that must not be mixed:
+
+| Slots (UTC) | `model_version` | `roi_version` | Halls |
+|---|---|---|---|
+| 2026-10-26 22:36 - 2026-10-28 01:12 | `yolo11n.pt@conf0.35` (640 px) | `v0-geometry-prior` | all four |
+| 2026-10-28 01:14 onward | `yolo11n.pt@conf0.35@imgsz1280` | `v1` | berkshire, worcester_north, worcester_south |
+| 2026-10-28 01:14 onward | `yolo11n.pt@conf0.35@imgsz1280` | `v0-geometry-prior` | hampshire_south |
+
+The switch: the old worker was stopped at 01:13:20 so no tick could count the
+new regions with the old detector, the three polygons went in in one
+transaction, `db/tests/roi_sanity.sql` passed against the live database, and
+the worker was recreated on the 1280 px image at 01:13:57. The last old slot is
+01:12 and the first new one 01:14; none was lost or overwritten.
+
+Why 1280: the streams are 1280×720 and the detector had been shrinking them to
+640, where the people at the far counters are too small to find. On one frame
+per camera, 640 found 7, 5, 0 and 4 people where 1280 found 21, 2, 6 and 15.
 
 | Report | State |
 |---|---|
-| Accuracy (MAE, bias) | No labels. `hallcheck evaluate` exits non-zero until coverage is met: 10+ per meal, 10+ per lighting, 10+ per hall, 150+ total - marginals, not the full cross. Labels wait on real ROIs. |
-| Forecast | History started 2026-10-26. About two weeks before a time split means anything: around 2026-11-09, less whatever the laptop sleeps through. |
-| Drift | No baseline. Needs about 15 days: around 2026-11-10 at the earliest. The incident log in the runbook is empty because the check has never run, which is no evidence the thresholds are right. |
+| Accuracy (MAE, bias) | No labels. `hallcheck evaluate` exits non-zero until coverage is met: 10+ per meal, 10+ per lighting, 10+ per hall, 150+ total - marginals, not the full cross. Labels can start now, against v1. |
+| Forecast | The usable series starts at the switch, 2026-10-28. About two weeks before a time split means anything: around 2026-11-11, later by whatever the laptop sleeps through. |
+| Drift | No baseline. Needs about 15 days of the new series, so around 2026-11-12 at the earliest - and the series fix under "Known gotchas" first. The incident log in the runbook is empty because the check has never run, which is no evidence the thresholds are right. |
 
 ## The order that matters
 
 1. ~~**Deploy the worker.**~~ Done 2026-10-26, on the laptop.
-2. **Watch 24 hours.** Gaps (sleep), restarts, `hallcheck health`. In progress.
-3. **Draw real ROIs, bump to `v1`.** Before any labelling.
+2. ~~**Watch 24 hours.**~~ Done; it showed the laptop sleeps more than it
+   collects. See "What interrupts it".
+3. ~~**Draw real ROIs, bump to `v1`.**~~ Done 2026-10-28 for three cameras,
+   with the detector moved to 1280 px at the same moment.
 4. **Schedule `hallcheck health`.** An alarm nobody runs catches nothing.
 5. **Collect labels**, then publish accuracy.
 
-Also open, not on the critical path: decide whether the laptop is the host or
-a stopgap (an always-on machine at home or on campus removes the sleep and
-logon gaps), and destroy the Fly app if it is not coming back.
+Also open:
+- **The host.** At under half coverage the laptop is a stopgap. An always-on
+  machine at home or on campus removes the sleep and logon gaps; until then,
+  plugged in and awake is the only state in which it collects.
+- **Hampshire South.** Clean or fix the camera, or deactivate the hall rather
+  than publish a number that is mostly haze.
+- **Drift and forecast series.** Separate by `roi_version` and
+  `model_version` before scheduling drift.
+- **The Fly app.** Destroy it if it is not coming back; it holds a copy of the
+  service key.
 
 Steps 2 and 4 are hours. Step 5 is weeks of elapsed time, and the forecast and
 drift evaluations are gated on history that only accrues while the worker
