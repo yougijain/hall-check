@@ -65,16 +65,7 @@ def run_drift_check(store: Store) -> None:
         log.error("drift check could not read counts: %s", exc)
         return
 
-    readings = [
-        Reading(
-            hall_id=row["hall_id"],
-            ts=datetime.fromisoformat(row["ts"]),
-            count=int(row["count"]),
-            camera_epoch=int(row.get("camera_epoch") or 1),
-            roi_version=str(row.get("roi_version") or "v1"),
-        )
-        for row in rows
-    ]
+    readings = [Reading.from_row(row) for row in rows]
 
     signals = check_all(readings, now=now)
     # Not `signal`: this module imports the stdlib `signal` for the SIGTERM
